@@ -6,8 +6,47 @@ branding:
   color: black
 inputs:
   model:
-    required: true
-    description: Model to use, in provider/model format
+    required: false
+    description: >-
+      Model to use, in provider/model format. When empty, the action probes the
+      models-review or models-fix chain (chosen by task type) and selects the
+      first reachable entry instead.
+    default: ''
+  models-review:
+    required: false
+    description: >-
+      Comma-separated probe chain used for review runs (pull_request triggers,
+      /review-pr prompts, and `/oc review` comments). Entries: cf:<model> probes
+      Cloudflare Workers AI, zen:<model> probes the opencode.ai Zen gateway, and a
+      bare provider/model is selected without probing.
+    default: >-
+      cf:@cf/zai-org/glm-5.2,
+      cf:@cf/deepseek-ai/deepseek-v4-pro-0813,
+      zen:big-pickle,
+      zen:nemotron-3-ultra-free
+  models-fix:
+    required: false
+    description: >-
+      Comma-separated probe chain used for non-review runs. Same entry syntax as
+      models-review.
+    default: >-
+      cf:@cf/deepseek-ai/deepseek-v4-flash-0731,
+      zen:nemotron-3.5-lightning-free,
+      zen:big-pickle,
+      zen:nemotron-3-ultra-free,
+      zen:deepseek-v4-flash
+  guard-path-leaks:
+    required: false
+    description: >-
+      Whether to snapshot PR comments before the run and fail the job when a
+      comment posted by this run contains a leaked `@/` or `/tmp/` path token.
+    default: 'true'
+  job-started-at:
+    required: false
+    description: >-
+      Epoch (seconds) when the job started, used to anchor the shared agent
+      deadline. Defaults to the moment the run step begins.
+    default: ''
   agent:
     required: false
     description: Agent to use as the run's default_agent. A slash command's frontmatter agent takes precedence.
@@ -54,6 +93,9 @@ outputs:
   opencode-version:
     description: OpenCode version resolved for this run.
     value: ${{ steps.version.outputs.opencode-version }}
+  model:
+    description: Model selected for this run (the `model` input or the first reachable probe-chain entry).
+    value: ${{ steps.probe.outputs.model || inputs.model }}
   cache-hit:
     description: Whether the OpenCode binary cache was restored. Empty for review-only runs, which always skip the cache and install fresh to avoid restoring a binary directory poisoned by prior runner state.
     value: ${{ steps.cache.outputs.cache-hit }}
@@ -98,6 +140,19 @@ runs:
         REVIEW_ONLY: ${{ steps.review_mode.outputs.enabled }}
       run: >
         "${ACTION_PATH}/scripts/prepare-opencode-config.sh"
+    - name: Select model and emit OpenCode config
+      id: probe
+      shell: bash -euo pipefail {0}
+      env:
+        MODEL: ${{ inputs.model }}
+        PROMPT: ${{ inputs.prompt }}
+        MENTIONS: ${{ inputs.mentions }}
+        MODELS_REVIEW: ${{ inputs.models-review }}
+        MODELS_FIX: ${{ inputs.models-fix }}
+        USE_BUNDLED_TOOLKIT: ${{ inputs.use-bundled-toolkit }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: >
+        "${ACTION_PATH}/scripts/probe-model.sh"
     - name: Cache OpenCode
       id: cache
       if: steps.review_mode.outputs.enabled != 'true'
@@ -111,17 +166,30 @@ runs:
       shell: bash -euo pipefail {0}
       env:
         OPENCODE_VERSION: ${{ steps.version.outputs.opencode-version }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+        ACTION_PATH: ${{ github.action_path }}
       run: >
-        curl -fsSL https://opencode.ai/install | bash -s -- --version "${OPENCODE_VERSION}"
+        "${ACTION_PATH}/scripts/install-opencode.sh"
     - name: Add OpenCode to PATH
       shell: bash -euo pipefail {0}
       run: >  # zizmor: ignore[github-env] fixed path, not attacker-controlled
         echo "${HOME}/.opencode/bin" | tee -a "${GITHUB_PATH}"
+    - name: Snapshot PR comments before agent run
+      if: inputs.guard-path-leaks == 'true'
+      shell: bash -euo pipefail {0}
+      env:
+        REPOSITORY: ${{ github.repository }}
+        PR_NUM: ${{ github.event.issue.number || github.event.pull_request.number || '' }}
+        GH_TOKEN: ${{ env.GH_TOKEN || env.GITHUB_TOKEN || '' }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: >
+        "${ACTION_PATH}/scripts/comment-guard.sh" snapshot
     - name: Run OpenCode
       id: run_opencode
       shell: bash -euo pipefail {0}
       env:
-        MODEL: ${{ inputs.model }}
+        MODEL: ${{ steps.probe.outputs.model || inputs.model }}
         AGENT: ${{ inputs.agent }}
         SHARE: ${{ inputs.share }}
         PROMPT: ${{ inputs.prompt }}
@@ -134,5 +202,17 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         USE_BUNDLED_TOOLKIT: ${{ inputs.use-bundled-toolkit }}
         REVIEW_ONLY: ${{ steps.review_mode.outputs.enabled }}
+        JOB_STARTED_AT: ${{ inputs.job-started-at }}
+        GH_TOKEN: ${{ env.GH_TOKEN || env.GITHUB_TOKEN || '' }}
       run: >
-        "${ACTION_PATH}/scripts/run-opencode.sh"
+        "${ACTION_PATH}/scripts/run-with-retry.sh"
+    - name: Guard against leaked path tokens
+      if: always() && inputs.guard-path-leaks == 'true'
+      shell: bash -euo pipefail {0}
+      env:
+        REPOSITORY: ${{ github.repository }}
+        PR_NUM: ${{ github.event.issue.number || github.event.pull_request.number || '' }}
+        GH_TOKEN: ${{ env.GH_TOKEN || env.GITHUB_TOKEN || '' }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: >
+        "${ACTION_PATH}/scripts/comment-guard.sh" verify

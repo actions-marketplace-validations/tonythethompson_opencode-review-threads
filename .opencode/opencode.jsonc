@@ -1,5 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "instructions": ["github-commands.md"],
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "oauth": false,
+      "headers": {
+        "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}",
+      },
+      "enabled": true,
+    },
+  },
   "provider": {
     "sakura": {
       "npm": "@ai-sdk/openai-compatible",

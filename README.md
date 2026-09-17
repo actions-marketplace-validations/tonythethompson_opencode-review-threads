@@ -85,6 +85,16 @@ Set `model` to a `provider/model` value and pass the corresponding API key:
 
 The provider account must have sufficient credits or quota. For providers not built into OpenCode, see [Custom providers](docs/custom-providers.md).
 
+### Model probe chains
+
+When `model` is left empty, the action probes a comma-separated fallback chain and selects the first reachable entry. `models-review` applies to review runs (`pull_request` triggers, `/review-pr`, and `/oc review`); `models-fix` applies to everything else. Entries are:
+
+- `cf:<model>` — probed through the Cloudflare Workers AI OpenAI-compatible endpoint; requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. Selected as `cloudflare-workers-ai/<model>` and registered on the built-in provider.
+- `zen:<model>` — probed through the opencode.ai Zen gateway; requires `OPENCODE_API_KEY`. Selected as `opencode/<model>`.
+- `<provider>/<model>` — selected without probing; the caller supplies the provider's credentials.
+
+The job fails if no chain entry answers, so pin `model` when you need a guaranteed selection.
+
 ## Sakura AI Engine model synchronization
 
 The optional [Sakura model synchronization workflow](.github/workflows/sync-sakura-models.yml) discovers chat-capable Sakura AI Engine models and opens or updates a pull request when the catalog changes. Configure the `SAKURA_AI_ENGINE_API_KEY` repository secret before enabling it.
@@ -95,7 +105,11 @@ The workflow uses the repository-provided `GITHUB_TOKEN` with `contents: write` 
 
 | Input                 | Default                   | Description                                                                                                                                                             |
 | --------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`               | Required                  | Model in `provider/model` format.                                                                                                                                       |
+| `model`               | Probe the chains          | Model in `provider/model` format. Empty probes `models-review`/`models-fix`.                                                                                            |
+| `models-review`       | Cloudflare then Zen chain | Comma-separated probe chain for review runs. Entries: `cf:<model>`, `zen:<model>`, or bare `provider/model`.                                                            |
+| `models-fix`          | Cloudflare then Zen chain | Comma-separated probe chain for non-review runs. Same entry syntax as `models-review`.                                                                                  |
+| `guard-path-leaks`    | `true`                    | Fail the job when a comment posted by this run leaks a `@/` or `/tmp/` path token.                                                                                      |
+| `job-started-at`      | Run step start            | Epoch the job started; anchors the shared agent deadline so the single retry cannot overrun the budget.                                                                 |
 | `agent`               | `build`                   | Primary agent. A slash command can override it.                                                                                                                         |
 | `prompt`              | Event comment             | Fixed prompt to use instead of the triggering comment.                                                                                                                  |
 | `mentions`            | `/opencode,/oc`           | Comma-separated trigger phrases.                                                                                                                                        |
@@ -107,11 +121,11 @@ The workflow uses the repository-provided `GITHUB_TOKEN` with `contents: write` 
 | `timeout-minutes`     | `60`                      | Stop OpenCode after this many minutes.                                                                                                                                  |
 | `oidc-base-url`       | `https://api.opencode.ai` | OIDC exchange URL for a custom GitHub App installation.                                                                                                                 |
 
-Direct `workflow_dispatch` uses the same inputs as `workflow_call`; `model` and a non-empty `prompt` are required to run the job.
+Direct `workflow_dispatch` uses the same inputs as `workflow_call`; a non-empty `prompt` is required to run the job, and an empty `model` triggers the probe chains.
 
 When `use-github-token: true`, keep `GITHUB_TOKEN` in `env` and grant only the permissions needed for the task.
 
-Outputs are `opencode-version` and `cache-hit`. `cache-hit` is empty on review-only runs (`prompt: /review-pr`), which always skip the cache and install fresh.
+Outputs are `opencode-version`, `model`, and `cache-hit`. `cache-hit` is empty on review-only runs (`prompt: /review-pr`), which always skip the cache and install fresh. The installed binary is verified against the sha256 digest published on the OpenCode release, and a failed run retries once after attempting to salvage locally committed agent work onto the updated remote.
 
 ## Pull request reviews
 

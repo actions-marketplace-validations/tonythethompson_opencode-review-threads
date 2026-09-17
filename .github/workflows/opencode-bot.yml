@@ -4,9 +4,10 @@ on:
   workflow_call:
     inputs:
       model:
-        required: true
+        required: false
         type: string
-        description: Model to use with OpenCode
+        description: Model to use with OpenCode; empty probes the models chain
+        default: ''
       agent:
         required: false
         type: string
@@ -57,6 +58,35 @@ on:
         type: number
         description: Maximum minutes to let OpenCode run
         default: 60
+      models-review:
+        required: false
+        type: string
+        description: "Comma-separated model probe chain for review runs (cf:/zen: prefixes, or bare provider/model)"
+        default: >-
+          cf:@cf/zai-org/glm-5.2,
+          cf:@cf/deepseek-ai/deepseek-v4-pro-0813,
+          zen:big-pickle,
+          zen:nemotron-3-ultra-free
+      models-fix:
+        required: false
+        type: string
+        description: Comma-separated model probe chain for non-review runs
+        default: >-
+          cf:@cf/deepseek-ai/deepseek-v4-flash-0731,
+          zen:nemotron-3.5-lightning-free,
+          zen:big-pickle,
+          zen:nemotron-3-ultra-free,
+          zen:deepseek-v4-flash
+      guard-path-leaks:
+        required: false
+        type: boolean
+        description: Fail the job when a posted comment leaks a file path token
+        default: true
+      setup-commands:
+        required: false
+        type: string
+        description: Shell commands run after checkout to install the repo toolchain
+        default: ''
       runs-on:
         required: false
         type: string
@@ -99,12 +129,22 @@ on:
       GH_TOKEN:
         required: false
         description: GitHub token for repository access
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
+        description: Cloudflare account ID for Workers AI probe-chain models
+      CLOUDFLARE_API_TOKEN:
+        required: false
+        description: Cloudflare API token for Workers AI probe-chain models
+      CONTEXT7_API_KEY:
+        required: false
+        description: Context7 API key for the bundled MCP server
   workflow_dispatch:  # checkov:skip=CKV_GHA_7: Parameterized manual dispatch is an intentional trusted-operator interface.
     inputs:
       model:
-        required: true
+        required: false
         type: string
-        description: Model to use with OpenCode
+        description: Model to use with OpenCode; empty probes the models chain
+        default: ''
       agent:
         required: false
         type: string
@@ -155,6 +195,35 @@ on:
         type: number
         description: Maximum minutes to let OpenCode run
         default: 60
+      models-review:
+        required: false
+        type: string
+        description: "Comma-separated model probe chain for review runs (cf:/zen: prefixes, or bare provider/model)"
+        default: >-
+          cf:@cf/zai-org/glm-5.2,
+          cf:@cf/deepseek-ai/deepseek-v4-pro-0813,
+          zen:big-pickle,
+          zen:nemotron-3-ultra-free
+      models-fix:
+        required: false
+        type: string
+        description: Comma-separated model probe chain for non-review runs
+        default: >-
+          cf:@cf/deepseek-ai/deepseek-v4-flash-0731,
+          zen:nemotron-3.5-lightning-free,
+          zen:big-pickle,
+          zen:nemotron-3-ultra-free,
+          zen:deepseek-v4-flash
+      guard-path-leaks:
+        required: false
+        type: boolean
+        description: Fail the job when a posted comment leaks a file path token
+        default: true
+      setup-commands:
+        required: false
+        type: string
+        description: Shell commands run after checkout to install the repo toolchain
+        default: ''
       runs-on:
         required: false
         type: string
@@ -193,6 +262,10 @@ jobs:
       )
     runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
     steps:
+      - name: Record job start time
+        id: job_start
+        shell: bash
+        run: printf 'epoch=%s\n' "$(date +%s)" >> "$GITHUB_OUTPUT"
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -204,6 +277,13 @@ jobs:
         run: |
           git config --local user.name 'opencode-agent[bot]'
           git config --local user.email 'opencode-agent[bot]@users.noreply.github.com'
+      - name: Run setup commands
+        if: inputs.setup-commands != ''
+        shell: bash
+        env:
+          SETUP_COMMANDS: ${{ inputs.setup-commands }}
+        run: |
+          eval "${SETUP_COMMANDS}"
       - name: Run OpenCode
         uses: $/.
         env:
@@ -218,9 +298,16 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         with:
-          model: ${{ inputs.model || 'openrouter/stealth/union-alpha' }}
+          model: ${{ inputs.model }}
+          models-review: ${{ inputs.models-review }}
+          models-fix: ${{ inputs.models-fix }}
+          guard-path-leaks: ${{ inputs.guard-path-leaks }}
+          job-started-at: ${{ steps.job_start.outputs.epoch }}
           agent: ${{ inputs.agent || 'build' }}
           share: ${{ inputs.share }}
           prompt: ${{ inputs.prompt }}
