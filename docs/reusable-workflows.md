@@ -30,7 +30,7 @@ jobs:
       pull-requests: write
       id-token: write
       actions: read
-    uses: dceoy/opencode-action/.github/workflows/opencode-bot.yml@0ff64486494c3134c46df6ce0e51eda4a64e349f  # v0.7.3
+    uses: tonythethompson/opencode-action/.github/workflows/opencode-bot.yml@4159b161c066f1d07fe2a8b7a8be48877768925b  # v0.8.0
     with:
       model: opencode-go/kimi-k3
     secrets:
@@ -59,7 +59,7 @@ jobs:
       pull-requests: write
       id-token: write
       actions: read
-    uses: dceoy/opencode-action/.github/workflows/opencode-review.yml@0ff64486494c3134c46df6ce0e51eda4a64e349f  # v0.7.3
+    uses: tonythethompson/opencode-action/.github/workflows/opencode-review.yml@4159b161c066f1d07fe2a8b7a8be48877768925b  # v0.8.0
     with:
       model: openrouter/openrouter/free
     secrets:

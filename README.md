@@ -2,7 +2,7 @@
 
 Run an [OpenCode](https://opencode.ai/) agent from GitHub Actions, including issue and pull request comments, pull request reviews, and manually dispatched tasks.
 
-[![CI](https://github.com/dceoy/opencode-action/actions/workflows/ci.yml/badge.svg)](https://github.com/dceoy/opencode-action/actions/workflows/ci.yml)
+[![CI](https://github.com/tonythethompson/opencode-action/actions/workflows/ci.yml/badge.svg)](https://github.com/tonythethompson/opencode-action/actions/workflows/ci.yml)
 
 ## Quick start
 
@@ -38,7 +38,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run OpenCode
-        uses: dceoy/opencode-action@0ff64486494c3134c46df6ce0e51eda4a64e349f  # v0.7.3
+        uses: tonythethompson/opencode-action@4159b161c066f1d07fe2a8b7a8be48877768925b  # v0.8.0
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
