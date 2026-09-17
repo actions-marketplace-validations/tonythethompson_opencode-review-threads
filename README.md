@@ -4,6 +4,15 @@ Run an [OpenCode](https://opencode.ai/) agent from GitHub Actions, including iss
 
 [![CI](https://github.com/tonythethompson/opencode-action/actions/workflows/ci.yml/badge.svg)](https://github.com/tonythethompson/opencode-action/actions/workflows/ci.yml)
 
+This is a fork of [dceoy/opencode-action](https://github.com/dceoy/opencode-action) kept in sync with upstream. Everything upstream provides still works; this fork adds resilience features on top:
+
+- **Model probe chains** — `model` is optional. When empty, `models-review`/`models-fix` fallback chains are probed in order (`cf:` Cloudflare Workers AI, `zen:` OpenCode Zen, or bare `provider/model` unprobed) and the first reachable model wins. See [Model probe chains](#model-probe-chains).
+- **Verified install** — the OpenCode release asset's sha256 digest is checked before extraction instead of piping the installer to a shell.
+- **Deadline, retry, and salvage** — the agent budget is anchored to job start; a failed run salvages local-only agent commits onto the updated remote and retries once within the same budget.
+- **Comment leak guard** — `guard-path-leaks` snapshots PR comments and fails the job if a posted comment leaks `@/` or `/tmp/` path tokens.
+- **`setup-commands` input** — the reusable workflows run caller-supplied shell commands after checkout so the agent has the repo's toolchain.
+- **Bundled GitHub runbook** — `.opencode/github-commands.md` documents review/thread posting, thread resolution, and the `@path` rules, and is wired through config `instructions` so it reaches the agent (including in review-only isolation).
+
 ## Quick start
 
 ### 1. Add a provider secret
@@ -38,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run OpenCode
-        uses: tonythethompson/opencode-action@8b917d4ce4f10a967e9d29ae263d05580c3ed395  # v0.8.0
+        uses: tonythethompson/opencode-action@4159b161c066f1d07fe2a8b7a8be48877768925b  # v0.8.0
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
