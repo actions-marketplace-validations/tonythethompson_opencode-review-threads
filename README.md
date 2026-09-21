@@ -84,14 +84,13 @@ See [Reusable workflows](docs/reusable-workflows.md) for caller examples, inputs
 
 Set `model` to a `provider/model` value and pass the corresponding API key:
 
-| Provider        | Example model                  | Secret               |
-| --------------- | ------------------------------ | -------------------- |
-| OpenCode        | `opencode-go/kimi-k3`          | `OPENCODE_API_KEY`   |
-| OpenRouter      | `openrouter/openrouter/free`   | `OPENROUTER_API_KEY` |
-| Anthropic       | `anthropic/claude-opus-5`      | `ANTHROPIC_API_KEY`  |
-| OpenAI          | `openai/gpt-5.6-sol`           | `OPENAI_API_KEY`     |
-| GitHub Models   | `github-models/openai/gpt-4.1` | `GITHUB_TOKEN`       |
-| Custom provider | `myprovider/my-model`          | Provider-specific    |
+| Provider        | Example model                | Secret               |
+| --------------- | ---------------------------- | -------------------- |
+| OpenCode        | `opencode-go/kimi-k3`        | `OPENCODE_API_KEY`   |
+| OpenRouter      | `openrouter/openrouter/free` | `OPENROUTER_API_KEY` |
+| Anthropic       | `anthropic/claude-opus-5`    | `ANTHROPIC_API_KEY`  |
+| OpenAI          | `openai/gpt-5.6-sol`         | `OPENAI_API_KEY`     |
+| Custom provider | `myprovider/my-model`        | Provider-specific    |
 
 The provider account must have sufficient credits or quota. For providers not built into OpenCode, see [Custom providers](docs/custom-providers.md).
 
@@ -101,11 +100,10 @@ When `model` is left empty, the action probes a comma-separated fallback chain a
 
 - `cf:<model>` — probed through the Cloudflare Workers AI OpenAI-compatible endpoint; requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. Selected as `cloudflare-workers-ai/<model>` and registered on the built-in provider.
 - `zen:<model>` — probed through the opencode.ai Zen gateway; requires `OPENCODE_API_KEY`. Selected as `opencode/<model>`. `zengo:<model>` targets the Zen Go gateway and is selected as `opencode-go/<model>`.
-- `gh:<model>` — probed through GitHub Models (`https://models.github.ai`); requires `GITHUB_TOKEN` with `models: read` on the job. Selected as `github-models/<model>`; the action emits the provider registration because OpenCode has no built-in `github-models` provider.
-- `<provider>:<model>` — probed through the provider's OpenAI-compatible endpoint (or its native API for `anthropic:` and `google:`); requires the provider's API-key env var. Selected as `<provider>/<model>`. Supported prefixes: `anthropic` (alias `claude`), `openai`, `openrouter`, `google` (alias `gemini`; accepts `GOOGLE_GENERATIVE_AI_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_API_KEY`), `groq`, `mistral`, `deepseek`, `xai`, `cerebras`, `moonshotai` (alias `moonshot`), `github-copilot` (alias `copilot`), `opencode`, `opencode-go`, `cloudflare-workers-ai`, and `github-models`.
+- `<provider>:<model>` — probed through the provider's OpenAI-compatible endpoint (or its native API for `anthropic:` and `google:`); requires the provider's API-key env var. Selected as `<provider>/<model>`. Supported prefixes: `anthropic` (alias `claude`), `openai`, `openrouter`, `google` (alias `gemini`; accepts `GOOGLE_GENERATIVE_AI_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_API_KEY`), `groq`, `mistral`, `deepseek`, `xai`, `cerebras`, `moonshotai` (alias `moonshot`), `github-copilot` (alias `copilot`), `opencode`, `opencode-go`, and `cloudflare-workers-ai`.
 - `<provider>/<model>` — selected without probing; the caller supplies the provider's credentials. Model IDs containing `:` (such as OpenRouter's `...:free` suffix) stay bare entries, since a probe prefix never contains `/`.
 
-The default chains only span free-capable endpoints (Cloudflare Workers AI, OpenCode Zen, GitHub Models, and OpenRouter `:free` models) so an unconfigured run never spends money. Add paid providers through an explicit chain or the `model` input. The job fails if no chain entry answers, so pin `model` when you need a guaranteed selection.
+The default chains only span zero-cost models (OpenCode Zen free tier and OpenRouter `:free` models), so an unconfigured run never spends money. Add paid providers (including Cloudflare Workers AI via `cf:`) through an explicit chain or the `model` input. The job fails if no chain entry answers, so pin `model` when you need a guaranteed selection.
 
 ## Inputs
 

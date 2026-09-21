@@ -1,6 +1,6 @@
 # Custom providers
 
-Use this guide for model providers that are not built into OpenCode, typically ones exposing an OpenAI-compatible API. One provider is the exception: the action emits a `github-models` registration itself whenever a `gh:` chain entry or a `github-models/*` selection needs it (see below), so GitHub Models needs no `opencode.json` either.
+Use this guide for model providers that are not built into OpenCode, typically ones exposing an OpenAI-compatible API.
 
 ## Configure the provider
 
@@ -50,33 +50,6 @@ with:
 
 For local interactive use, OpenCode can store a custom provider credential through `/connect`. GitHub Actions should use an environment variable backed by an Actions secret instead of an interactive login.
 
-## GitHub Models
-
-GitHub Models is not a built-in OpenCode provider, so the action registers it as a custom provider whenever the selected model or a probe-chain entry references it. `gh:openai/gpt-4.1` in a chain (or `model: github-models/openai/gpt-4.1` directly) emits the equivalent of:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "github-models": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "GitHub Models",
-      "options": {
-        "baseURL": "https://models.github.ai/inference",
-        "apiKey": "{env:GITHUB_TOKEN}"
-      },
-      "models": {
-        "openai/gpt-4.1": {
-          "name": "openai/gpt-4.1"
-        }
-      }
-    }
-  }
-}
-```
-
-The job's `GITHUB_TOKEN` authenticates the request; grant the job `models: read` so the token can call the inference endpoint. Model IDs follow GitHub Models catalog naming such as `openai/gpt-4.1` or `deepseek/DeepSeek-V3`.
-
 ## Variants for custom providers
 
 The action does not reproduce OpenCode's configuration precedence or plugin discovery in shell. A nonempty `variant` is validated against the bundled `.opencode/opencode.jsonc` registry only when the action can conservatively establish that this registry is authoritative. Otherwise the requested value is passed to OpenCode unchanged.
@@ -96,7 +69,7 @@ A passed-through `variant` that the provider rejects surfaces as an OpenCode/pro
 
 ## Limitations and security
 
-The bundled `/review-pr` mode installs a fresh trusted OpenCode configuration and disables project and caller-supplied configuration. Custom providers defined in the repository's `opencode.json` are therefore unavailable to `/review-pr`; use a built-in provider for isolated review runs. Provider registrations the action itself generates are trusted: `cf:`/`gh:` probe-chain models are emitted into the run's config before isolation and re-imported for review-only runs, so `cloudflare-workers-ai/*` and `github-models/*` selections remain valid there.
+The bundled `/review-pr` mode installs a fresh trusted OpenCode configuration and disables project and caller-supplied configuration. Custom providers defined in the repository's `opencode.json` are therefore unavailable to `/review-pr`; use a built-in provider for isolated review runs. Provider registrations the action itself generates are trusted: `cf:` probe-chain models are emitted into the run's config before isolation and re-imported for review-only runs, so `cloudflare-workers-ai/*` selections remain valid there.
 
 Treat project provider configuration as trusted input before exposing a provider secret. The configuration controls `baseURL` and optional request headers, so an untrusted change could redirect the credential to another endpoint. Restrict workflow triggers and secret access accordingly.
 
@@ -104,4 +77,3 @@ Treat project provider configuration as trusted input before exposing a provider
 
 - [OpenCode custom provider documentation](https://opencode.ai/docs/providers/#custom-provider)
 - [OpenCode configuration variables](https://opencode.ai/docs/config/#variables)
-- [GitHub Models documentation](https://docs.github.com/en/github-models)

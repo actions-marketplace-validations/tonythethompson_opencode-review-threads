@@ -34,13 +34,13 @@ setup() {
   done
 }
 
-@test "custom model collection deduplicates cf: and gh: entries across both chains" {
+@test "custom model collection deduplicates cf: entries across both chains" {
   run bash -euo pipefail -c '
     source "$1"
-    opencode_probe_custom_models "cf:@cf/a,zen:b, cf:@cf/c ,other/x,cf:@cf/a,gh:openai/gpt-4.1,github-models:openai/gpt-4.1"
+    opencode_probe_custom_models "cf:@cf/a,zen:b, cf:@cf/c ,other/x,cf:@cf/a,cloudflare-workers-ai:@cf/b"
   ' _ "${probe_script}"
   [ "${status}" -eq 0 ]
-  [ "${output}" = "cloudflare-workers-ai:@cf/a cloudflare-workers-ai:@cf/c github-models:openai/gpt-4.1" ]
+  [ "${output}" = "cloudflare-workers-ai:@cf/a cloudflare-workers-ai:@cf/c cloudflare-workers-ai:@cf/b" ]
 }
 
 @test "emitted config carries model context7 and runbook instructions without cf block" {
@@ -67,32 +67,6 @@ setup() {
   ' _ "${probe_script}"
   [ "${status}" -eq 0 ]
   [ "${output}" = "cloudflare-workers-ai/@cf/a|@cf/a,@cf/b" ]
-}
-
-@test "emitted config registers github-models provider block and model ids" {
-  run bash -euo pipefail -c '
-    source "$1"
-    opencode_emit_config "github-models/openai/gpt-4.1" "github-models:openai/gpt-4.1" "runbook.md" | jq -r "
-      [.model,
-       .provider[\"github-models\"].npm,
-       .provider[\"github-models\"].options.baseURL,
-       .provider[\"github-models\"].options.apiKey,
-       (.provider[\"github-models\"].models | keys | join(\",\"))] | join(\"|\")
-    "
-  ' _ "${probe_script}"
-  [ "${status}" -eq 0 ]
-  [ "${output}" = "github-models/openai/gpt-4.1|@ai-sdk/openai-compatible|https://models.github.ai/inference|{env:GITHUB_TOKEN}|openai/gpt-4.1" ]
-}
-
-@test "emitted config omits github-models provider block when no gh model is selected" {
-  run bash -euo pipefail -c '
-    source "$1"
-    opencode_emit_config "opencode/big-pickle" "cloudflare-workers-ai:@cf/a" "runbook.md" | jq -r "
-      .provider | has(\"github-models\") | tostring
-    "
-  ' _ "${probe_script}"
-  [ "${status}" -eq 0 ]
-  [ "${output}" = "false" ]
 }
 
 @test "provider env gate requires all plus-joined vars and any tilde alternative" {

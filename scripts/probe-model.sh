@@ -12,17 +12,13 @@
 #                        OPENCODE_API_KEY; selected as opencode/<model>
 #   zengo:<model>        probe the opencode.ai Zen Go gateway; needs
 #                        OPENCODE_API_KEY; selected as opencode-go/<model>
-#   gh:<model>           probe GitHub Models; needs GITHUB_TOKEN with the
-#                        job-level `models: read` permission; selected as
-#                        github-models/<model>
 #   <provider>:<model>   probe any other supported provider; needs that
 #                        provider's API-key env var; selected as
 #                        <provider>/<model>. Supported providers:
 #                        anthropic, openai, openrouter, google (alias gemini),
 #                        groq, mistral, deepseek, xai, cerebras, moonshotai
 #                        (alias moonshot), github-copilot (alias copilot),
-#                        opencode, opencode-go, cloudflare-workers-ai,
-#                        github-models
+#                        opencode, opencode-go, cloudflare-workers-ai
 #   <provider>/<model>   selected without probing; the caller is responsible for
 #                        the provider credentials in env
 #
@@ -111,8 +107,6 @@ zen|opencode|https://opencode.ai/zen/v1|OPENCODE_API_KEY
 opencode|opencode|https://opencode.ai/zen/v1|OPENCODE_API_KEY
 zengo|opencode-go|https://opencode.ai/zen/go/v1|OPENCODE_API_KEY
 opencode-go|opencode-go|https://opencode.ai/zen/go/v1|OPENCODE_API_KEY
-gh|github-models|https://models.github.ai/inference|GITHUB_TOKEN
-github-models|github-models|https://models.github.ai/inference|GITHUB_TOKEN
 anthropic|anthropic|anthropic|ANTHROPIC_API_KEY
 claude|anthropic|anthropic|ANTHROPIC_API_KEY
 google|google|google|GOOGLE_GENERATIVE_AI_API_KEY~GEMINI_API_KEY~GOOGLE_API_KEY
@@ -186,8 +180,7 @@ opencode_probe_env_key() {
 
 # Space-separated "provider:model" pairs that must be registered in the emitted
 # config because the provider is custom or the model id is not cataloged:
-# cloudflare-workers-ai (@cf/... ids) and github-models (absent from models.dev
-# entirely, so its provider block is emitted too).
+# cloudflare-workers-ai (@cf/... ids).
 opencode_probe_custom_models() {
   local chains="${1}" entry pair out=""
   local -a entries
@@ -198,8 +191,6 @@ opencode_probe_custom_models() {
     case "${entry}" in
       cf:* | cloudflare-workers-ai:*) pair="cloudflare-workers-ai:${entry#*:}" ;;
       cloudflare-workers-ai/*) pair="cloudflare-workers-ai:${entry#*/}" ;;
-      gh:* | github-models:*) pair="github-models:${entry#*:}" ;;
-      github-models/*) pair="github-models:${entry#*/}" ;;
       *) continue ;;
     esac
     case " ${out} " in
@@ -233,9 +224,8 @@ opencode_probe_instructions() {
 
 # Emit the inline config shared by every selection: context7 MCP, the GitHub
 # command runbook instructions, and custom provider/model registrations
-# (cloudflare-workers-ai model ids; the github-models provider block plus its
-# model ids). Caller-provided OPENCODE_CONFIG_CONTENT is used as a merge base
-# when present.
+# (cloudflare-workers-ai model ids). Caller-provided OPENCODE_CONFIG_CONTENT is
+# used as a merge base when present.
 opencode_emit_config() {
   local model="${1}" custom_models="${2:-}" instructions="${3}"
   local base="${OPENCODE_CONFIG_CONTENT:-"{}"}"
@@ -263,16 +253,6 @@ opencode_emit_config() {
       }
       | if ($custom_models | length) > 0 then
           .provider = $custom_models
-          | if (.provider | has("github-models")) then
-              .provider["github-models"] += {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": "GitHub Models",
-                "options": {
-                  "baseURL": "https://models.github.ai/inference",
-                  "apiKey": "{env:GITHUB_TOKEN}"
-                }
-              }
-            else . end
         else . end) as $emitted
     | ($base * $emitted)
     | .instructions = ((($base.instructions // []) + $instr) + $instr | unique)
@@ -354,10 +334,10 @@ _opencode_probe_main() {
       echo "::error::Invalid model '${MODEL}'. Model must be in the format 'provider/model'."
       exit 1
     fi
-    # Register explicit cloudflare-workers-ai / github-models ids on their
-    # providers even when they are not part of a probe chain.
+    # Register explicit cloudflare-workers-ai ids on their provider even when
+    # they are not part of a probe chain.
     case "${MODEL}" in
-      cloudflare-workers-ai/* | github-models/*)
+      cloudflare-workers-ai/*)
         model="${MODEL%%/*}:${MODEL#*/}"
         case " ${custom_models} " in
           *" ${model} "*) ;;
