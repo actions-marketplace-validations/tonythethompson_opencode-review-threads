@@ -20,24 +20,16 @@ inputs:
       probes the provider's endpoint before selecting (prefixes: cf, zen, zengo,
       anthropic, openai, openrouter, google, groq, mistral, deepseek, xai,
       cerebras, moonshotai, github-copilot), while a bare provider/model is
-      selected without probing. Defaults only span zero-cost models (OpenCode
-      Zen free tier, OpenRouter :free); add paid providers via an explicit
-      chain or the model input.
-    default: >-
-      zen:big-pickle,
-      zen:glm-5-free,
-      zen:nemotron-3-ultra-free,
-      openrouter:nvidia/nemotron-3-ultra-550b-a55b:free
+      selected without probing. Required when `model` is empty; no chains are
+      bundled, so model selection is always an explicit caller choice.
+    default: ""
   models-fix:
     required: false
     description: >-
-      Comma-separated probe chain used for non-review runs. Same entry syntax as
-      models-review.
-    default: >-
-      zen:nemotron-3.5-lightning-free,
-      zen:deepseek-v4-flash-free,
-      zen:big-pickle,
-      openrouter:qwen/qwen3.8-27b:free
+      Comma-separated probe chain used for non-review runs. Same entry syntax
+      as models-review. Required when `model` is empty and a non-review run is
+      triggered.
+    default: ""
   guard-path-leaks:
     required: false
     description: >-

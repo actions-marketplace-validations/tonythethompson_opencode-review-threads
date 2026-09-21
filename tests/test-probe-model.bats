@@ -211,6 +211,22 @@ setup() {
     "${fake_temp}/opencode-probe-config.json" > /dev/null
 }
 
+@test "empty model and empty chains fail fast with an actionable error" {
+  run env \
+    MODEL="" \
+    MODELS_REVIEW="" \
+    MODELS_FIX="" \
+    GITHUB_EVENT_NAME="pull_request" \
+    GITHUB_OUTPUT="${BATS_TEST_TMPDIR}/out" \
+    GITHUB_ENV="${BATS_TEST_TMPDIR}/env" \
+    RUNNER_TEMP="${BATS_TEST_TMPDIR}" \
+    ACTION_PATH="${fake_action}" \
+    "${probe_script}"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"No model configured"* ]]
+  [[ "${output}" == *"models-review"* ]]
+}
+
 @test "explicit model without provider prefix is rejected" {
   run env \
     MODEL="just-a-model" \

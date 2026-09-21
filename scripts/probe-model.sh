@@ -3,8 +3,9 @@
 # Functions are sourceable for tests.
 #
 # When MODEL is set it is used verbatim (provider/model) and no endpoint is
-# probed. Otherwise the comma-separated chain for the run kind is walked and
-# the first reachable entry wins:
+# probed. Otherwise the caller-supplied comma-separated chain for the run kind
+# is walked and the first reachable entry wins. No chains are bundled: a run
+# with neither MODEL nor a matching chain fails fast:
 #   cf:<model>           probe Cloudflare Workers AI; needs
 #                        CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN;
 #                        selected as cloudflare-workers-ai/<model>
@@ -352,10 +353,14 @@ _opencode_probe_main() {
   opencode_effective_prompt "${PROMPT:-}" "${MENTIONS:-}" "${GITHUB_EVENT_PATH:-}"
   if opencode_probe_is_review "${OPENCODE_EFFECTIVE_PROMPT:-}" "${GITHUB_EVENT_NAME:-}"; then
     chain_kind="review"
-    chain="${MODELS_REVIEW:?MODELS_REVIEW is required}"
+    chain="${MODELS_REVIEW:-}"
   else
     chain_kind="fix"
-    chain="${MODELS_FIX:?MODELS_FIX is required}"
+    chain="${MODELS_FIX:-}"
+  fi
+  if [[ -z "${chain}" ]]; then
+    echo "::error::No model configured. Set the 'model' input or a 'models-${chain_kind}' probe chain."
+    exit 1
   fi
   echo "::notice::Probing ${chain_kind} chain: ${chain}"
 

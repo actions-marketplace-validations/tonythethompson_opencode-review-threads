@@ -61,21 +61,13 @@ on:
       models-review:
         required: false
         type: string
-        description: "Comma-separated model probe chain for review runs (<prefix>:<model> probes; bare provider/model is trusted)"
-        default: >-
-          zen:big-pickle,
-          zen:glm-5-free,
-          zen:nemotron-3-ultra-free,
-          openrouter:nvidia/nemotron-3-ultra-550b-a55b:free
+        description: "Comma-separated model probe chain for review runs (<prefix>:<model> probes; bare provider/model is trusted). Required when model is empty."
+        default: ""
       models-fix:
         required: false
         type: string
-        description: Comma-separated model probe chain for non-review runs
-        default: >-
-          zen:nemotron-3.5-lightning-free,
-          zen:deepseek-v4-flash-free,
-          zen:big-pickle,
-          openrouter:qwen/qwen3.8-27b:free
+        description: Comma-separated model probe chain for non-review runs. Required when model is empty.
+        default: ""
       guard-path-leaks:
         required: false
         type: boolean
@@ -200,21 +192,13 @@ on:
       models-review:
         required: false
         type: string
-        description: "Comma-separated model probe chain for review runs (<prefix>:<model> probes; bare provider/model is trusted)"
-        default: >-
-          zen:big-pickle,
-          zen:glm-5-free,
-          zen:nemotron-3-ultra-free,
-          openrouter:nvidia/nemotron-3-ultra-550b-a55b:free
+        description: "Comma-separated model probe chain for review runs (<prefix>:<model> probes; bare provider/model is trusted). Required when model is empty."
+        default: ""
       models-fix:
         required: false
         type: string
-        description: Comma-separated model probe chain for non-review runs
-        default: >-
-          zen:nemotron-3.5-lightning-free,
-          zen:deepseek-v4-flash-free,
-          zen:big-pickle,
-          openrouter:qwen/qwen3.8-27b:free
+        description: Comma-separated model probe chain for non-review runs. Required when model is empty.
+        default: ""
       guard-path-leaks:
         required: false
         type: boolean

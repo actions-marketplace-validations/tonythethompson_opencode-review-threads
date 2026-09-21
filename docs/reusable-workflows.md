@@ -74,24 +74,24 @@ To focus the review, override `prompt` with a supported review aspect, for examp
 
 Both reusable workflows expose the action configuration plus a runner input:
 
-| Input                 | Default                                                             | Description                                                           |
-| --------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `model`               | Probe the chains                                                    | Model in `provider/model` format.                                     |
-| `models-review`       | Free-capable probe chain                                            | Probe chain for review runs (`<prefix>:<model>` or `provider/model`). |
-| `models-fix`          | Free-capable probe chain                                            | Probe chain for non-review runs.                                      |
-| `guard-path-leaks`    | `true`                                                              | Fail when a posted comment leaks a `@/` or `/tmp/` token.             |
-| `setup-commands`      | `''`                                                                | Shell commands run after checkout to install the toolchain.           |
-| `agent`               | `build`                                                             | Primary agent.                                                        |
-| `share`               | `false`                                                             | Share the OpenCode session.                                           |
-| `prompt`              | `''` for `opencode-bot.yml`; `/review-pr` for `opencode-review.yml` | Fixed prompt.                                                         |
-| `use-github-token`    | `false`                                                             | Use the workflow token instead of the default App-token flow.         |
-| `mentions`            | `/opencode,/oc`                                                     | Comma-separated trigger phrases.                                      |
-| `variant`             | `''`                                                                | Provider-specific model variant.                                      |
-| `oidc-base-url`       | `https://api.opencode.ai`                                           | OIDC exchange base URL.                                               |
-| `opencode-version`    | `latest`                                                            | OpenCode version to install.                                          |
-| `use-bundled-toolkit` | `true`                                                              | Use the bundled OpenCode toolkit.                                     |
-| `timeout-minutes`     | `60`                                                                | Maximum OpenCode runtime in minutes.                                  |
-| `runs-on`             | `ubuntu-latest`                                                     | Runner label for the called job.                                      |
+| Input                 | Default                                                             | Description                                                                                           |
+| --------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `model`               | Probe the chains                                                    | Model in `provider/model` format.                                                                     |
+| `models-review`       | -                                                                   | Probe chain for review runs (`<prefix>:<model>` or `provider/model`). Required when `model` is empty. |
+| `models-fix`          | -                                                                   | Probe chain for non-review runs. Required when `model` is empty.                                      |
+| `guard-path-leaks`    | `true`                                                              | Fail when a posted comment leaks a `@/` or `/tmp/` token.                                             |
+| `setup-commands`      | `''`                                                                | Shell commands run after checkout to install the toolchain.                                           |
+| `agent`               | `build`                                                             | Primary agent.                                                                                        |
+| `share`               | `false`                                                             | Share the OpenCode session.                                                                           |
+| `prompt`              | `''` for `opencode-bot.yml`; `/review-pr` for `opencode-review.yml` | Fixed prompt.                                                                                         |
+| `use-github-token`    | `false`                                                             | Use the workflow token instead of the default App-token flow.                                         |
+| `mentions`            | `/opencode,/oc`                                                     | Comma-separated trigger phrases.                                                                      |
+| `variant`             | `''`                                                                | Provider-specific model variant.                                                                      |
+| `oidc-base-url`       | `https://api.opencode.ai`                                           | OIDC exchange base URL.                                                                               |
+| `opencode-version`    | `latest`                                                            | OpenCode version to install.                                                                          |
+| `use-bundled-toolkit` | `true`                                                              | Use the bundled OpenCode toolkit.                                                                     |
+| `timeout-minutes`     | `60`                                                                | Maximum OpenCode runtime in minutes.                                                                  |
+| `runs-on`             | `ubuntu-latest`                                                     | Runner label for the called job.                                                                      |
 
 Direct `workflow_dispatch` on `opencode-bot.yml` uses the same inputs.
 
