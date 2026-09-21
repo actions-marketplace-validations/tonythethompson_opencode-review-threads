@@ -135,6 +135,9 @@ on:
       CLOUDFLARE_API_TOKEN:
         required: false
         description: Cloudflare API token for Workers AI probe-chain models
+      CLOUDFLARE_API_KEY:
+        required: false
+        description: Cloudflare credential OpenCode's cloudflare-workers-ai provider reads at runtime; defaults to CLOUDFLARE_API_TOKEN
       CONTEXT7_API_KEY:
         required: false
         description: Context7 API key for the bundled MCP server
@@ -200,6 +203,7 @@ jobs:
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_KEY }}
           CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         with:
