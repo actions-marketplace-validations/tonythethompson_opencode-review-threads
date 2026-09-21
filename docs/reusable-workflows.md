@@ -22,6 +22,10 @@ on:
   pull_request_review_comment:
     types: [created]
 
+concurrency:
+  group: opencode-bot-${{ github.event.issue.number || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   opencode:
     permissions:
@@ -37,6 +41,8 @@ jobs:
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
 ```
 
+The `concurrency` group serializes runs per issue or pull request; `cancel-in-progress: false` queues later triggers instead of cancelling a run that may be mid-commit.
+
 For comment events, the reusable workflow accepts comments only from `OWNER`, `MEMBER`, `COLLABORATOR`, or `CONTRIBUTOR` author associations (`CONTRIBUTOR` covers org members whose private membership surfaces as `CONTRIBUTOR` in event payloads). On non-comment events, a non-empty `prompt` is required.
 
 ## Pull request review
@@ -50,6 +56,10 @@ name: OpenCode review
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   review:
@@ -66,7 +76,15 @@ jobs:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-This example assumes a trusted, same-repository pull request. For `pull_request` events from public forks, GitHub withholds repository Actions secrets and makes `GITHUB_TOKEN` read-only; Dependabot pull requests have the same restrictions. Private-fork behavior can differ when repository settings explicitly allow secrets or write tokens.
+The `concurrency` group cancels the previous run when a new commit lands on the same pull request, so reviews cannot pile up on superseded commits.
+
+The called workflow enforces its own trigger policy, so callers do not need a job-level `if:` gate. A review job runs only when all of these hold:
+
+- the event is `pull_request` and the pull request's head branch belongs to the same repository (fork pull requests are skipped because GitHub withholds secrets from them anyway),
+- the pull request author is a non-bot `OWNER`, `MEMBER`, `COLLABORATOR`, or `CONTRIBUTOR`, and the pull request is not a draft,
+- or the caller set `model`, which bypasses the author/draft/bot checks as an explicit opt-in.
+
+For `pull_request` events from public forks, GitHub withholds repository Actions secrets and makes `GITHUB_TOKEN` read-only; Dependabot pull requests have the same restrictions. Private-fork behavior can differ when repository settings explicitly allow secrets or write tokens.
 
 To focus the review, override `prompt` with a supported review aspect, for example `prompt: /review-pr security performance`. See [Pull request reviews](pull-request-reviews.md) for review behavior and security guarantees.
 
