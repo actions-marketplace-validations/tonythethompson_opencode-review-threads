@@ -47,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run OpenCode
-        uses: tonythethompson/opencode-action@4159b161c066f1d07fe2a8b7a8be48877768925b  # v0.8.0
+        uses: tonythethompson/opencode-action@be9f348feb20e2e065e402e3947847060b6b4795  # v0.8.1
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
