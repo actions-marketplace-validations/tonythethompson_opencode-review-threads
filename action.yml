@@ -16,14 +16,18 @@ inputs:
     required: false
     description: >-
       Comma-separated probe chain used for review runs (pull_request triggers,
-      /review-pr prompts, and `/oc review` comments). Entries: cf:<model> probes
-      Cloudflare Workers AI, zen:<model> probes the opencode.ai Zen gateway, and a
-      bare provider/model is selected without probing.
+      /review-pr prompts, and `/oc review` comments). Entries: <prefix>:<model>
+      probes the provider's endpoint before selecting (prefixes: cf, zen, zengo,
+      gh, anthropic, openai, openrouter, google, groq, mistral, deepseek, xai,
+      cerebras, moonshotai, github-copilot), while a bare provider/model is
+      selected without probing. Defaults only span free-capable providers; add paid providers via
+      an explicit chain or the model input. gh: entries need GITHUB_TOKEN with
+      job-level `models: read`.
     default: >-
       cf:@cf/zai-org/glm-5.2,
-      cf:@cf/deepseek-ai/deepseek-v4-pro-0813,
       zen:big-pickle,
-      zen:nemotron-3-ultra-free
+      gh:openai/gpt-4.1,
+      openrouter:meta-llama/llama-3.3-70b-instruct:free
   models-fix:
     required: false
     description: >-
@@ -32,9 +36,8 @@ inputs:
     default: >-
       cf:@cf/deepseek-ai/deepseek-v4-flash-0731,
       zen:nemotron-3.5-lightning-free,
-      zen:big-pickle,
-      zen:nemotron-3-ultra-free,
-      zen:deepseek-v4-flash
+      gh:openai/gpt-4o-mini,
+      openrouter:meta-llama/llama-3.3-70b-instruct:free
   guard-path-leaks:
     required: false
     description: >-

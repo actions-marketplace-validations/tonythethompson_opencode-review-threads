@@ -30,6 +30,7 @@ jobs:
       pull-requests: write
       id-token: write
       actions: read
+      models: read
     uses: tonythethompson/opencode-action/.github/workflows/opencode-bot.yml@8a5d5d2924701107a776fde9ec1d55c6d62a918b  # v0.8.6
     with:
       model: opencode-go/kimi-k3
@@ -59,6 +60,7 @@ jobs:
       pull-requests: write
       id-token: write
       actions: read
+      models: read
     uses: tonythethompson/opencode-action/.github/workflows/opencode-review.yml@8a5d5d2924701107a776fde9ec1d55c6d62a918b  # v0.8.6
     with:
       model: openrouter/openrouter/free
@@ -74,24 +76,24 @@ To focus the review, override `prompt` with a supported review aspect, for examp
 
 Both reusable workflows expose the action configuration plus a runner input:
 
-| Input                 | Default                                                             | Description                                                   |
-| --------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `model`               | Probe the chains                                                    | Model in `provider/model` format.                             |
-| `models-review`       | Cloudflare then Zen chain                                           | Probe chain for review runs (`cf:`/`zen:`/`provider/model`).  |
-| `models-fix`          | Cloudflare then Zen chain                                           | Probe chain for non-review runs.                              |
-| `guard-path-leaks`    | `true`                                                              | Fail when a posted comment leaks a `@/` or `/tmp/` token.     |
-| `setup-commands`      | `''`                                                                | Shell commands run after checkout to install the toolchain.   |
-| `agent`               | `build`                                                             | Primary agent.                                                |
-| `share`               | `false`                                                             | Share the OpenCode session.                                   |
-| `prompt`              | `''` for `opencode-bot.yml`; `/review-pr` for `opencode-review.yml` | Fixed prompt.                                                 |
-| `use-github-token`    | `false`                                                             | Use the workflow token instead of the default App-token flow. |
-| `mentions`            | `/opencode,/oc`                                                     | Comma-separated trigger phrases.                              |
-| `variant`             | `''`                                                                | Provider-specific model variant.                              |
-| `oidc-base-url`       | `https://api.opencode.ai`                                           | OIDC exchange base URL.                                       |
-| `opencode-version`    | `latest`                                                            | OpenCode version to install.                                  |
-| `use-bundled-toolkit` | `true`                                                              | Use the bundled OpenCode toolkit.                             |
-| `timeout-minutes`     | `60`                                                                | Maximum OpenCode runtime in minutes.                          |
-| `runs-on`             | `ubuntu-latest`                                                     | Runner label for the called job.                              |
+| Input                 | Default                                                             | Description                                                           |
+| --------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `model`               | Probe the chains                                                    | Model in `provider/model` format.                                     |
+| `models-review`       | Free-capable probe chain                                            | Probe chain for review runs (`<prefix>:<model>` or `provider/model`). |
+| `models-fix`          | Free-capable probe chain                                            | Probe chain for non-review runs.                                      |
+| `guard-path-leaks`    | `true`                                                              | Fail when a posted comment leaks a `@/` or `/tmp/` token.             |
+| `setup-commands`      | `''`                                                                | Shell commands run after checkout to install the toolchain.           |
+| `agent`               | `build`                                                             | Primary agent.                                                        |
+| `share`               | `false`                                                             | Share the OpenCode session.                                           |
+| `prompt`              | `''` for `opencode-bot.yml`; `/review-pr` for `opencode-review.yml` | Fixed prompt.                                                         |
+| `use-github-token`    | `false`                                                             | Use the workflow token instead of the default App-token flow.         |
+| `mentions`            | `/opencode,/oc`                                                     | Comma-separated trigger phrases.                                      |
+| `variant`             | `''`                                                                | Provider-specific model variant.                                      |
+| `oidc-base-url`       | `https://api.opencode.ai`                                           | OIDC exchange base URL.                                               |
+| `opencode-version`    | `latest`                                                            | OpenCode version to install.                                          |
+| `use-bundled-toolkit` | `true`                                                              | Use the bundled OpenCode toolkit.                                     |
+| `timeout-minutes`     | `60`                                                                | Maximum OpenCode runtime in minutes.                                  |
+| `runs-on`             | `ubuntu-latest`                                                     | Runner label for the called job.                                      |
 
 Direct `workflow_dispatch` on `opencode-bot.yml` uses the same inputs.
 
@@ -99,12 +101,12 @@ GitHub.com's `$/path` self repository syntax resolves to the repository and comm
 
 ## Secrets
 
-Pass only the provider secret needed by the selected model. The reusable workflows accept `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `OPENCODE_API_KEY`, `SAKURA_AI_ENGINE_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, and `MOONSHOT_API_KEY`. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` enable `cf:` probe-chain entries, and `CONTEXT7_API_KEY` enables the bundled context7 MCP server. OpenCode's `cloudflare-workers-ai` provider reads `CLOUDFLARE_API_KEY` at runtime, so the workflows export that variable from `CLOUDFLARE_API_TOKEN` (a scoped Bearer token) unless `CLOUDFLARE_API_KEY` is passed explicitly.
+Pass only the provider secrets needed by the probe chain. The reusable workflows accept `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `OPENCODE_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MOONSHOT_API_KEY`, and `MISTRAL_API_KEY`. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` enable `cf:` probe-chain entries, and `CONTEXT7_API_KEY` enables the bundled context7 MCP server. `gh:` entries probe GitHub Models with the job's `GITHUB_TOKEN`; grant `models: read` on the calling job so the called workflow's token inherits it. OpenCode's `cloudflare-workers-ai` provider reads `CLOUDFLARE_API_KEY` at runtime, so the workflows export that variable from `CLOUDFLARE_API_TOKEN` (a scoped Bearer token) unless `CLOUDFLARE_API_KEY` is passed explicitly.
 
 `GH_TOKEN` is optional. When omitted, the reusable workflow falls back to the caller's `github.token`. With `use-github-token: true`, that fallback is limited to `contents: read` by the called workflow even if the caller grants `contents: write`. For code-writing operations such as `/oc fix this`, pass a separately write-scoped `GH_TOKEN`; otherwise GitHub API writes to repository contents fail with `403`.
 
 ## Permissions
 
-The reusable workflows request `contents: read`, `pull-requests: write`, `issues: write`, `id-token: write`, and `actions: read`. A called workflow can only maintain or reduce the caller's `GITHUB_TOKEN` permissions: the caller must grant the requested permissions, but its higher `contents` permission cannot override the called workflow's `contents: read` ceiling. A separately supplied `GH_TOKEN` is not governed by that `GITHUB_TOKEN` permission ceiling.
+The reusable workflows request `contents: read`, `pull-requests: write`, `issues: write`, `id-token: write`, `actions: read`, and `models: read`. A called workflow can only maintain or reduce the caller's `GITHUB_TOKEN` permissions: the caller must grant the requested permissions, but its higher `contents` permission cannot override the called workflow's `contents: read` ceiling. Callers that skip `models: read` simply lose `gh:` probe entries to the next chain fallback. A separately supplied `GH_TOKEN` is not governed by that `GITHUB_TOKEN` permission ceiling.
 
 The examples keep `permissions`, `with`, and `secrets` under the calling job so their scopes are explicit: `permissions` controls the caller token, `with` configures the reusable workflow inputs, and `secrets` passes credentials.

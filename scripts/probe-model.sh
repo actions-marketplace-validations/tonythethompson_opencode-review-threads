@@ -5,18 +5,36 @@
 # When MODEL is set it is used verbatim (provider/model) and no endpoint is
 # probed. Otherwise the comma-separated chain for the run kind is walked and
 # the first reachable entry wins:
-#   cf:<model>          probe the Cloudflare Workers AI OpenAI-compatible
-#                       endpoint; selected as cloudflare-workers-ai/<model>
-#   zen:<model>         probe the opencode.ai Zen gateway; selected as
-#                       opencode/<model>
-#   <provider>/<model>  selected without probing; the caller is responsible for
-#                       the provider credentials in env
+#   cf:<model>           probe Cloudflare Workers AI; needs
+#                        CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN;
+#                        selected as cloudflare-workers-ai/<model>
+#   zen:<model>          probe the opencode.ai Zen gateway; needs
+#                        OPENCODE_API_KEY; selected as opencode/<model>
+#   zengo:<model>        probe the opencode.ai Zen Go gateway; needs
+#                        OPENCODE_API_KEY; selected as opencode-go/<model>
+#   gh:<model>           probe GitHub Models; needs GITHUB_TOKEN with the
+#                        job-level `models: read` permission; selected as
+#                        github-models/<model>
+#   <provider>:<model>   probe any other supported provider; needs that
+#                        provider's API-key env var; selected as
+#                        <provider>/<model>. Supported providers:
+#                        anthropic, openai, openrouter, google (alias gemini),
+#                        groq, mistral, deepseek, xai, cerebras, moonshotai
+#                        (alias moonshot), github-copilot (alias copilot),
+#                        opencode, opencode-go, cloudflare-workers-ai,
+#                        github-models
+#   <provider>/<model>   selected without probing; the caller is responsible for
+#                        the provider credentials in env
 #
 # Env in:  MODEL (optional), PROMPT, MENTIONS, GITHUB_EVENT_PATH,
-#          GITHUB_EVENT_NAME, MODELS_REVIEW, MODELS_FIX, OPENCODE_API_KEY,
-#          CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, ACTION_PATH,
-#          GITHUB_WORKSPACE, RUNNER_TEMP, OPENCODE_CONFIG_CONTENT (optional
-#          caller-provided base config that the emitted config is merged over)
+#          GITHUB_EVENT_NAME, MODELS_REVIEW, MODELS_FIX, provider credentials
+#          (OPENCODE_API_KEY, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
+#          GITHUB_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY,
+#          GOOGLE_GENERATIVE_AI_API_KEY, GEMINI_API_KEY, GOOGLE_API_KEY,
+#          GROQ_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, XAI_API_KEY,
+#          CEREBRAS_API_KEY, MOONSHOT_API_KEY), ACTION_PATH, GITHUB_WORKSPACE,
+#          RUNNER_TEMP, OPENCODE_CONFIG_CONTENT (optional caller-provided base
+#          config that the emitted config is merged over)
 # Out:     $GITHUB_OUTPUT  -> model
 #          $GITHUB_ENV     -> OPENCODE_CONFIG_CONTENT, OPENCODE_PROBE_CONFIG_FILE
 #
@@ -36,10 +54,12 @@ opencode_probe_is_review() {
   return 1
 }
 
-opencode_probe_zen() {
-  local model="${1}"
-  curl -sf --max-time 15 -X POST "https://opencode.ai/zen/v1/chat/completions" \
-    -H "Authorization: Bearer ${OPENCODE_API_KEY}" \
+# OpenAI-compatible probe shared by every provider exposing
+# {base}/chat/completions: POST a 1-token completion and require HTTP success.
+opencode_probe_openai_compat() {
+  local base="${1}" key="${2}" model="${3}"
+  curl -sf --max-time 15 -X POST "${base}/chat/completions" \
+    -H "Authorization: Bearer ${key}" \
     -H "Content-Type: application/json" \
     -d "{\"model\":\"${model}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":1}" \
     > /dev/null 2>&1
@@ -47,28 +67,144 @@ opencode_probe_zen() {
 
 opencode_probe_cf() {
   local model="${1}"
-  curl -sf --max-time 20 -X POST \
-    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions" \
-    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  opencode_probe_openai_compat \
+    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1" \
+    "${CLOUDFLARE_API_TOKEN}" "${model}"
+}
+
+opencode_probe_zen() {
+  local model="${1}"
+  opencode_probe_openai_compat "https://opencode.ai/zen/v1" "${OPENCODE_API_KEY}" "${model}"
+}
+
+opencode_probe_anthropic() {
+  local model="${1}"
+  curl -sf --max-time 15 -X POST "https://api.anthropic.com/v1/messages" \
+    -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+    -H "anthropic-version: 2023-06-01" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${model}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":1}" \
+    -d "{\"model\":\"${model}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" \
     > /dev/null 2>&1
 }
 
-# Space-separated list of Cloudflare Workers AI model ids appearing in the
-# given comma-separated chains (cf: entries only, deduplicated).
-opencode_probe_cf_models() {
-  local chains="${1}" entry model out=""
+opencode_probe_google() {
+  local model="${1}" key="${2}"
+  curl -sf --max-time 15 -X POST \
+    "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent" \
+    -H "x-goog-api-key: ${key}" \
+    -H "Content-Type: application/json" \
+    -d '{"contents":[{"parts":[{"text":"ping"}]}]}' \
+    > /dev/null 2>&1
+}
+
+# Provider table for colon-prefixed chain entries, one per line:
+#   <prefix>|<provider id>|<probe spec>|<env spec>
+# probe spec: an OpenAI-compatible base URL, or a bespoke kind
+#   (anthropic|google). env spec: '~' separates alternatives, '+' joins
+#   vars that must all be set. The bearer key for the generic probe is the
+#   last '+'-joined var of the satisfied alternative.
+opencode_probe_provider_table() {
+  cat << 'TABLE'
+cf|cloudflare-workers-ai|https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1|CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN
+cloudflare-workers-ai|cloudflare-workers-ai|https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1|CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN
+zen|opencode|https://opencode.ai/zen/v1|OPENCODE_API_KEY
+opencode|opencode|https://opencode.ai/zen/v1|OPENCODE_API_KEY
+zengo|opencode-go|https://opencode.ai/zen/go/v1|OPENCODE_API_KEY
+opencode-go|opencode-go|https://opencode.ai/zen/go/v1|OPENCODE_API_KEY
+gh|github-models|https://models.github.ai/inference|GITHUB_TOKEN
+github-models|github-models|https://models.github.ai/inference|GITHUB_TOKEN
+anthropic|anthropic|anthropic|ANTHROPIC_API_KEY
+claude|anthropic|anthropic|ANTHROPIC_API_KEY
+google|google|google|GOOGLE_GENERATIVE_AI_API_KEY~GEMINI_API_KEY~GOOGLE_API_KEY
+gemini|google|google|GOOGLE_GENERATIVE_AI_API_KEY~GEMINI_API_KEY~GOOGLE_API_KEY
+openai|openai|https://api.openai.com/v1|OPENAI_API_KEY
+openrouter|openrouter|https://openrouter.ai/api/v1|OPENROUTER_API_KEY
+groq|groq|https://api.groq.com/openai/v1|GROQ_API_KEY
+mistral|mistral|https://api.mistral.ai/v1|MISTRAL_API_KEY
+deepseek|deepseek|https://api.deepseek.com|DEEPSEEK_API_KEY
+xai|xai|https://api.x.ai/v1|XAI_API_KEY
+cerebras|cerebras|https://api.cerebras.ai/v1|CEREBRAS_API_KEY
+moonshotai|moonshotai|https://api.moonshot.ai/v1|MOONSHOT_API_KEY
+moonshot|moonshotai|https://api.moonshot.ai/v1|MOONSHOT_API_KEY
+copilot|github-copilot|https://api.githubcopilot.com|GITHUB_TOKEN
+github-copilot|github-copilot|https://api.githubcopilot.com|GITHUB_TOKEN
+TABLE
+}
+
+# Print "<provider>\t<spec>\t<envs>" for a chain-entry prefix, nothing when the
+# prefix is unknown.
+opencode_probe_lookup() {
+  local prefix="${1}"
+  opencode_probe_provider_table | awk -F'|' -v p="${prefix}" \
+    '$1 == p { print $2 "\t" $3 "\t" $4; found=1; exit } END { exit !found }'
+}
+
+# True when an env spec is satisfied: at least one '~' alternative whose every
+# '+'-joined var is set.
+opencode_probe_env_ok() {
+  local envs="${1}" alt var ok
+  local -a alts vars
+  IFS='~' read -r -a alts <<< "${envs}"
+  for alt in "${alts[@]}"; do
+    IFS='+' read -r -a vars <<< "${alt}"
+    ok=0
+    for var in "${vars[@]}"; do
+      [[ -n "${!var:-}" ]] || {
+        ok=1
+        break
+      }
+    done
+    [[ "${ok}" -eq 0 ]] && return 0
+  done
+  return 1
+}
+
+# Bearer key for a satisfied env spec: the last '+'-joined var of the first
+# satisfied alternative (for CLOUDFLARE that is CLOUDFLARE_API_TOKEN, not the
+# account id). Prints nothing when no alternative is satisfied.
+opencode_probe_env_key() {
+  local envs="${1}" alt var ok last
+  local -a alts vars
+  IFS='~' read -r -a alts <<< "${envs}"
+  for alt in "${alts[@]}"; do
+    IFS='+' read -r -a vars <<< "${alt}"
+    ok=0
+    for var in "${vars[@]}"; do
+      [[ -n "${!var:-}" ]] || {
+        ok=1
+        break
+      }
+    done
+    if [[ "${ok}" -eq 0 ]]; then
+      last="${vars[$((${#vars[@]} - 1))]}"
+      printf '%s' "${!last}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Space-separated "provider:model" pairs that must be registered in the emitted
+# config because the provider is custom or the model id is not cataloged:
+# cloudflare-workers-ai (@cf/... ids) and github-models (absent from models.dev
+# entirely, so its provider block is emitted too).
+opencode_probe_custom_models() {
+  local chains="${1}" entry pair out=""
   local -a entries
   IFS=',' read -r -a entries <<< "${chains}"
   for entry in "${entries[@]}"; do
     entry="${entry#"${entry%%[![:space:]]*}"}"
     entry="${entry%"${entry##*[![:space:]]}"}"
-    [[ "${entry}" == cf:* ]] || continue
-    model="${entry#cf:}"
+    case "${entry}" in
+      cf:* | cloudflare-workers-ai:*) pair="cloudflare-workers-ai:${entry#*:}" ;;
+      cloudflare-workers-ai/*) pair="cloudflare-workers-ai:${entry#*/}" ;;
+      gh:* | github-models:*) pair="github-models:${entry#*:}" ;;
+      github-models/*) pair="github-models:${entry#*/}" ;;
+      *) continue ;;
+    esac
     case " ${out} " in
-      *" ${model} "*) ;;
-      *) out+="${out:+ }${model}" ;;
+      *" ${pair} "*) ;;
+      *) out+="${out:+ }${pair}" ;;
     esac
   done
   printf '%s' "${out}"
@@ -96,20 +232,23 @@ opencode_probe_instructions() {
 }
 
 # Emit the inline config shared by every selection: context7 MCP, the GitHub
-# command runbook instructions, and the cloudflare-workers-ai model registry
-# when cf_models is non-empty. Caller-provided OPENCODE_CONFIG_CONTENT is used
-# as a merge base when present.
+# command runbook instructions, and custom provider/model registrations
+# (cloudflare-workers-ai model ids; the github-models provider block plus its
+# model ids). Caller-provided OPENCODE_CONFIG_CONTENT is used as a merge base
+# when present.
 opencode_emit_config() {
-  local model="${1}" cf_models="${2:-}" instructions="${3}"
+  local model="${1}" custom_models="${2:-}" instructions="${3}"
   local base="${OPENCODE_CONFIG_CONTENT:-"{}"}"
   jq -n \
     --arg model "${model}" \
-    --arg cf "${cf_models}" \
+    --arg custom "${custom_models}" \
     --arg instructions "${instructions}" \
     --argjson base "${base}" '
     ($instructions | split(" ") | map(select(length > 0))) as $instr
-    | ($cf | split(" ") | map(select(length > 0))
-      | map({key: ., value: {name: .}}) | from_entries) as $cf_models
+    | ($custom | split(" ") | map(select(length > 0))
+      | map(split(":") | {provider: .[0], model: (.[1:] | join(":"))})) as $pairs
+    | (reduce $pairs[] as $p ({};
+        .[$p.provider].models[$p.model] = {name: $p.model})) as $custom_models
     | ({
         "mcp": {
           "context7": {
@@ -122,19 +261,29 @@ opencode_emit_config() {
         },
         "model": $model
       }
-      | if ($cf_models | length) > 0 then
-          .provider = { "cloudflare-workers-ai": { "models": $cf_models } }
+      | if ($custom_models | length) > 0 then
+          .provider = $custom_models
+          | if (.provider | has("github-models")) then
+              .provider["github-models"] += {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "GitHub Models",
+                "options": {
+                  "baseURL": "https://models.github.ai/inference",
+                  "apiKey": "{env:GITHUB_TOKEN}"
+                }
+              }
+            else . end
         else . end) as $emitted
     | ($base * $emitted)
-    | .instructions = ((($base.instructions // []) + $instr) | unique)
+    | .instructions = ((($base.instructions // []) + $instr) + $instr | unique)
     | . + { "$schema": "https://opencode.ai/config.json" }'
 }
 
 _opencode_probe_choose() {
-  local model="${1}" cf_models="${2:-}" instructions config_json probe_file
+  local model="${1}" custom_models="${2:-}" instructions config_json probe_file
   instructions="$(opencode_probe_instructions \
     "${GITHUB_WORKSPACE:-}" "${ACTION_PATH:-}" "${USE_BUNDLED_TOOLKIT:-true}")"
-  config_json="$(opencode_emit_config "${model}" "${cf_models}" "${instructions}")" || {
+  config_json="$(opencode_emit_config "${model}" "${custom_models}" "${instructions}")" || {
     echo "::error::Failed to render OpenCode config for model '${model}'."
     exit 1
   }
@@ -153,31 +302,71 @@ _opencode_probe_choose() {
   exit 0
 }
 
+# Probe one colon-prefixed chain entry. Prints the selected provider/model on
+# stdout on success; warnings go to stderr. Returns nonzero when the prefix is
+# unknown, credentials are missing, or the endpoint probe fails.
+opencode_probe_entry() {
+  local entry="${1}" prefix model row provider spec envs key
+  prefix="${entry%%:*}"
+  model="${entry#*:}"
+  row="$(opencode_probe_lookup "${prefix}")" || {
+    echo "::warning::Unrecognized provider prefix '${prefix}:' - skipping" >&2
+    return 1
+  }
+  provider="${row%%$'\t'*}"
+  spec="$(cut -f2 <<< "${row}")"
+  envs="$(cut -f3 <<< "${row}")"
+  if ! opencode_probe_env_ok "${envs}"; then
+    echo "::warning::Skipping ${entry} - credentials not set (${envs//~/ or })" >&2
+    return 1
+  fi
+  case "${spec}" in
+    anthropic)
+      opencode_probe_anthropic "${model}"
+      ;;
+    google)
+      key="$(opencode_probe_env_key "${envs}")"
+      opencode_probe_google "${model}" "${key}"
+      ;;
+    *)
+      key="$(opencode_probe_env_key "${envs}")"
+      if [[ "${spec}" == *'$'* ]]; then eval "spec=\"${spec}\""; fi
+      opencode_probe_openai_compat "${spec}" "${key}" "${model}"
+      ;;
+  esac || {
+    echo "::warning::${entry} unavailable - trying next" >&2
+    return 1
+  }
+  printf '%s/%s' "${provider}" "${model}"
+}
+
 _opencode_probe_main() {
-  local script_dir chain_kind chain entries entry model cf_models
+  local script_dir chain_kind chain entries entry model custom_models selected
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   # shellcheck source=scripts/opencode-action-lib.sh
   source "${script_dir}/opencode-action-lib.sh"
 
-  cf_models="$(opencode_probe_cf_models "${MODELS_REVIEW:-},${MODELS_FIX:-}")"
+  custom_models="$(opencode_probe_custom_models "${MODELS_REVIEW:-},${MODELS_FIX:-}")"
 
   if [[ -n "${MODEL:-}" ]]; then
     if [[ "${MODEL}" != */* ]]; then
       echo "::error::Invalid model '${MODEL}'. Model must be in the format 'provider/model'."
       exit 1
     fi
-    # Register an explicit cloudflare-workers-ai model id on the built-in
-    # provider even when it is not part of a probe chain.
-    if [[ "${MODEL}" == cloudflare-workers-ai/* ]]; then
-      model="${MODEL#cloudflare-workers-ai/}"
-      case " ${cf_models} " in
-        *" ${model} "*) ;;
-        *) cf_models+="${cf_models:+ }${model}" ;;
-      esac
-    fi
+    # Register explicit cloudflare-workers-ai / github-models ids on their
+    # providers even when they are not part of a probe chain.
+    case "${MODEL}" in
+      cloudflare-workers-ai/* | github-models/*)
+        model="${MODEL%%/*}:${MODEL#*/}"
+        case " ${custom_models} " in
+          *" ${model} "*) ;;
+          *) custom_models+="${custom_models:+ }${model}" ;;
+        esac
+        ;;
+    esac
     echo "::notice::Using explicit model ${MODEL} (probing skipped)"
-    _opencode_probe_choose "${MODEL}" "${cf_models}"
+    _opencode_probe_choose "${MODEL}" "${custom_models}"
   fi
 
   opencode_effective_prompt "${PROMPT:-}" "${MENTIONS:-}" "${GITHUB_EVENT_PATH:-}"
@@ -195,34 +384,19 @@ _opencode_probe_main() {
     entry="${entry#"${entry%%[![:space:]]*}"}"
     entry="${entry%"${entry##*[![:space:]]}"}"
     [[ -n "${entry}" ]] || continue
-    case "${entry}" in
-      cf:*)
-        model="${entry#cf:}"
-        if [[ -z "${CLOUDFLARE_API_TOKEN:-}" || -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
-          echo "::warning::Skipping ${entry} - CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN not set"
-          continue
-        fi
-        if opencode_probe_cf "${model}"; then
-          _opencode_probe_choose "cloudflare-workers-ai/${model}" "${cf_models}"
-        fi
-        echo "::warning::${entry} unavailable - trying next"
-        ;;
-      zen:*)
-        model="${entry#zen:}"
-        if [[ -z "${OPENCODE_API_KEY:-}" ]]; then
-          echo "::warning::Skipping ${entry} - OPENCODE_API_KEY not set"
-          continue
-        fi
-        if opencode_probe_zen "${model}"; then
-          _opencode_probe_choose "opencode/${model}" "${cf_models}"
-        fi
-        echo "::warning::${entry} unavailable - trying next"
-        ;;
-      *)
-        echo "::notice::${entry} is selected without probing"
-        _opencode_probe_choose "${entry}" "${cf_models}"
-        ;;
-    esac
+    # A colon-prefixed entry has the form <prefix>:<model> where the prefix
+    # itself never contains '/'; a bare provider/model stays trusted even when
+    # the model id contains ':' (e.g. openrouter's ':free' suffixes).
+    if [[ "${entry}" == *:* && "${entry%%:*}" != */* ]]; then
+      if selected="$(opencode_probe_entry "${entry}")"; then
+        _opencode_probe_choose "${selected}" "${custom_models}"
+      fi
+    elif [[ "${entry}" == */* ]]; then
+      echo "::notice::${entry} is selected without probing"
+      _opencode_probe_choose "${entry}" "${custom_models}"
+    else
+      echo "::warning::Unrecognized chain entry '${entry}' - expected <prefix>:<model> or <provider>/<model>"
+    fi
   done
 
   echo "::error::No model in the ${chain_kind} chain was reachable. Set the 'model' input to select one explicitly."

@@ -1,6 +1,6 @@
 # Custom providers
 
-Use this guide for model providers that are not built into OpenCode, typically ones exposing an OpenAI-compatible API. Sakura AI Engine is the exception: it ships pre-configured in this action's bundled toolkit (see below), so most users need no `opencode.json` at all.
+Use this guide for model providers that are not built into OpenCode, typically ones exposing an OpenAI-compatible API. One provider is the exception: the action emits a `github-models` registration itself whenever a `gh:` chain entry or a `github-models/*` selection needs it (see below), so GitHub Models needs no `opencode.json` either.
 
 ## Configure the provider
 
@@ -50,28 +50,24 @@ with:
 
 For local interactive use, OpenCode can store a custom provider credential through `/connect`. GitHub Actions should use an environment variable backed by an Actions secret instead of an interactive login.
 
-## Sakura AI Engine example
+## GitHub Models
 
-Sakura AI Engine is already pre-configured as the `sakura` provider in the bundled toolkit's `.opencode/opencode.jsonc`, so `model: sakura/gpt-oss-120b` and the other bundled model IDs work out of the box whenever `use-bundled-toolkit: true` (the default) and `SAKURA_AI_ENGINE_API_KEY` is set — no repository `opencode.json` is required. The configuration below is only needed to run with `use-bundled-toolkit: false`, or to add Sakura model IDs beyond the bundled set.
-
-Sakura AI Engine exposes an OpenAI-compatible `/v1/chat/completions` endpoint. A minimal configuration is:
+GitHub Models is not a built-in OpenCode provider, so the action registers it as a custom provider whenever the selected model or a probe-chain entry references it. `gh:openai/gpt-4.1` in a chain (or `model: github-models/openai/gpt-4.1` directly) emits the equivalent of:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
-    "sakura": {
+    "github-models": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Sakura AI Engine",
+      "name": "GitHub Models",
       "options": {
-        "baseURL": "https://api.ai.sakura.ad.jp/v1",
-        "apiKey": "{env:SAKURA_AI_ENGINE_API_KEY}",
-        "timeout": 900000,
-        "chunkTimeout": 900000
+        "baseURL": "https://models.github.ai/inference",
+        "apiKey": "{env:GITHUB_TOKEN}"
       },
       "models": {
-        "gpt-oss-120b": {
-          "name": "gpt-oss-120b"
+        "openai/gpt-4.1": {
+          "name": "openai/gpt-4.1"
         }
       }
     }
@@ -79,18 +75,7 @@ Sakura AI Engine exposes an OpenAI-compatible `/v1/chat/completions` endpoint. A
 }
 ```
 
-Configure the workflow step with:
-
-```yaml
-env:
-  SAKURA_AI_ENGINE_API_KEY: ${{ secrets.SAKURA_AI_ENGINE_API_KEY }}
-with:
-  model: sakura/gpt-oss-120b
-```
-
-Replace or extend `models` with model IDs available to the Sakura AI Engine account.
-
-Leave the action's `variant` input empty for Sakura models unless the effective OpenCode configuration explicitly adds a supported variant. The bundled Sakura entries declare no supported variants; their `variants` objects are empty.
+The job's `GITHUB_TOKEN` authenticates the request; grant the job `models: read` so the token can call the inference endpoint. Model IDs follow GitHub Models catalog naming such as `openai/gpt-4.1` or `deepseek/DeepSeek-V3`.
 
 ## Variants for custom providers
 
@@ -111,7 +96,7 @@ A passed-through `variant` that the provider rejects surfaces as an OpenCode/pro
 
 ## Limitations and security
 
-The bundled `/review-pr` mode installs a fresh trusted OpenCode configuration and disables project and caller-supplied configuration. Custom providers defined in the repository's `opencode.json` are therefore unavailable to `/review-pr`; use a built-in provider for isolated review runs. Providers defined in the bundled toolkit's own `.opencode/opencode.jsonc` are a separate case: that file is reinstalled fresh for every `/review-pr` run, so `sakura/*` models stay selectable there too, provided the workflow step still exposes `SAKURA_AI_ENGINE_API_KEY`. Provider registrations the action itself generates are also trusted: `cf:` probe-chain models are emitted into the run's config before isolation and re-imported for review-only runs, so `cloudflare-workers-ai/*` selections remain valid.
+The bundled `/review-pr` mode installs a fresh trusted OpenCode configuration and disables project and caller-supplied configuration. Custom providers defined in the repository's `opencode.json` are therefore unavailable to `/review-pr`; use a built-in provider for isolated review runs. Provider registrations the action itself generates are trusted: `cf:`/`gh:` probe-chain models are emitted into the run's config before isolation and re-imported for review-only runs, so `cloudflare-workers-ai/*` and `github-models/*` selections remain valid there.
 
 Treat project provider configuration as trusted input before exposing a provider secret. The configuration controls `baseURL` and optional request headers, so an untrusted change could redirect the credential to another endpoint. Restrict workflow triggers and secret access accordingly.
 
@@ -119,4 +104,4 @@ Treat project provider configuration as trusted input before exposing a provider
 
 - [OpenCode custom provider documentation](https://opencode.ai/docs/providers/#custom-provider)
 - [OpenCode configuration variables](https://opencode.ai/docs/config/#variables)
-- [Sakura AI Engine OpenCode guide](https://ai.sakura.ad.jp/column/ai-engine-client-guide-opencode/)
+- [GitHub Models documentation](https://docs.github.com/en/github-models)

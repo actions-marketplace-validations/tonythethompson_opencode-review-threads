@@ -61,12 +61,12 @@ on:
       models-review:
         required: false
         type: string
-        description: "Comma-separated model probe chain for review runs (cf:/zen: prefixes, or bare provider/model)"
+        description: "Comma-separated model probe chain for review runs (<prefix>:<model> probes; bare provider/model is trusted)"
         default: >-
           cf:@cf/zai-org/glm-5.2,
-          cf:@cf/deepseek-ai/deepseek-v4-pro-0813,
           zen:big-pickle,
-          zen:nemotron-3-ultra-free
+          gh:openai/gpt-4.1,
+          openrouter:meta-llama/llama-3.3-70b-instruct:free
       models-fix:
         required: false
         type: string
@@ -74,9 +74,8 @@ on:
         default: >-
           cf:@cf/deepseek-ai/deepseek-v4-flash-0731,
           zen:nemotron-3.5-lightning-free,
-          zen:big-pickle,
-          zen:nemotron-3-ultra-free,
-          zen:deepseek-v4-flash
+          gh:openai/gpt-4o-mini,
+          openrouter:meta-llama/llama-3.3-70b-instruct:free
       guard-path-leaks:
         required: false
         type: boolean
@@ -105,9 +104,6 @@ on:
       OPENCODE_API_KEY:
         required: false
         description: OpenCode API key
-      SAKURA_AI_ENGINE_API_KEY:
-        required: false
-        description: Sakura AI Engine API key
       GOOGLE_GENERATIVE_AI_API_KEY:
         required: false
         description: Google Generative AI API key
@@ -126,6 +122,9 @@ on:
       MOONSHOT_API_KEY:
         required: false
         description: Moonshot AI API key
+      MISTRAL_API_KEY:
+        required: false
+        description: Mistral API key
       GH_TOKEN:
         required: false
         description: GitHub token for repository access
@@ -151,6 +150,7 @@ permissions:
   issues: write
   id-token: write
   actions: read
+  models: read
 jobs:
   opencode-review:
     if: >
@@ -195,13 +195,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          SAKURA_AI_ENGINE_API_KEY: ${{ secrets.SAKURA_AI_ENGINE_API_KEY }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_KEY }}

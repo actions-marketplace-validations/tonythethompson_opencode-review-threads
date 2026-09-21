@@ -6,7 +6,7 @@ The bundled `/review-pr` flow runs a strictly read-only, risk-driven multi-agent
 
 ## Setup
 
-Review workflows require OpenCode 1.2.14 or newer, `use-bundled-toolkit: true`, `pull-requests: write`, and an API key for the selected model provider. The bundled Sakura provider's `chunkTimeout` setting requires OpenCode 1.2.25 or newer; pins between 1.2.14 and 1.2.24 fall back to the top-level request `timeout` instead of the inter-chunk timeout. Request, chunk, and action timeouts are safety limits, not substitutes for bounding request size, and `chunkTimeout` cannot guarantee that a provider-side gateway or inference timeout will not end a request sooner.
+Review workflows require OpenCode 1.2.14 or newer, `use-bundled-toolkit: true`, `pull-requests: write`, and an API key for the selected model provider. Request and action timeouts are safety limits, not substitutes for bounding request size, and a provider-side gateway or inference timeout can still end a request sooner.
 
 Start from the pinned workflow in the [README quick start](../README.md#quick-start), then grant pull-request write access and configure the OpenCode step for review mode. The copied job remains triggered by `/oc` or `/opencode`; the fixed `prompt` below makes either accepted mention run `/review-pr`.
 

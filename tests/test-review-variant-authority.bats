@@ -17,7 +17,7 @@
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ \
     "${repo_root}/scripts/run-opencode.sh" \
     "${repo_root}/scripts/opencode-action-lib.sh" \
@@ -45,7 +45,7 @@
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ \
     "${repo_root}/scripts/run-opencode.sh" \
     "${repo_root}/scripts/opencode-action-lib.sh" \
@@ -74,7 +74,7 @@
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ \
     "${repo_root}/scripts/run-opencode.sh" \
     "${repo_root}/scripts/opencode-action-lib.sh" \
@@ -104,7 +104,7 @@
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ \
     "${repo_root}/scripts/run-opencode.sh" \
     "${repo_root}/scripts/opencode-action-lib.sh" \
@@ -135,7 +135,7 @@
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ \
     "${repo_root}/scripts/run-opencode.sh" \
     "${repo_root}/scripts/opencode-action-lib.sh" \
@@ -164,7 +164,7 @@
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ \
     "${repo_root}/scripts/run-opencode.sh" \
     "${repo_root}/scripts/opencode-action-lib.sh" \
@@ -194,7 +194,7 @@
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ \
     "${repo_root}/scripts/run-opencode.sh" \
     "${repo_root}/scripts/opencode-action-lib.sh" \

@@ -6,7 +6,7 @@ Run an [OpenCode](https://opencode.ai/) agent from GitHub Actions, including iss
 
 This is a fork of [dceoy/opencode-action](https://github.com/dceoy/opencode-action) kept in sync with upstream. Everything upstream provides still works; this fork adds resilience features on top:
 
-- **Model probe chains** — `model` is optional. When empty, `models-review`/`models-fix` fallback chains are probed in order (`cf:` Cloudflare Workers AI, `zen:` OpenCode Zen, or bare `provider/model` unprobed) and the first reachable model wins. See [Model probe chains](#model-probe-chains).
+- **Model probe chains** — `model` is optional. When empty, `models-review`/`models-fix` fallback chains are probed in order across the providers you have credentials for (Cloudflare Workers AI, OpenCode Zen, GitHub Models, OpenRouter, Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek, xAI, Cerebras, Moonshot, and bare `provider/model` entries selected unprobed) and the first reachable model wins. Defaults only span free-capable providers. See [Model probe chains](#model-probe-chains).
 - **Verified install** — the OpenCode release asset's sha256 digest is checked before extraction instead of piping the installer to a shell.
 - **Deadline, retry, and salvage** — the agent budget is anchored to job start; a failed run salvages local-only agent commits onto the updated remote and retries once within the same budget.
 - **Comment leak guard** — `guard-path-leaks` snapshots PR comments and fails the job if a posted comment leaks `@/` or `/tmp/` path tokens.
@@ -84,13 +84,14 @@ See [Reusable workflows](docs/reusable-workflows.md) for caller examples, inputs
 
 Set `model` to a `provider/model` value and pass the corresponding API key:
 
-| Provider        | Example model                | Secret               |
-| --------------- | ---------------------------- | -------------------- |
-| OpenCode        | `opencode-go/kimi-k3`        | `OPENCODE_API_KEY`   |
-| OpenRouter      | `openrouter/openrouter/free` | `OPENROUTER_API_KEY` |
-| Anthropic       | `anthropic/claude-opus-5`    | `ANTHROPIC_API_KEY`  |
-| OpenAI          | `openai/gpt-5.6-sol`         | `OPENAI_API_KEY`     |
-| Custom provider | `myprovider/my-model`        | Provider-specific    |
+| Provider        | Example model                  | Secret               |
+| --------------- | ------------------------------ | -------------------- |
+| OpenCode        | `opencode-go/kimi-k3`          | `OPENCODE_API_KEY`   |
+| OpenRouter      | `openrouter/openrouter/free`   | `OPENROUTER_API_KEY` |
+| Anthropic       | `anthropic/claude-opus-5`      | `ANTHROPIC_API_KEY`  |
+| OpenAI          | `openai/gpt-5.6-sol`           | `OPENAI_API_KEY`     |
+| GitHub Models   | `github-models/openai/gpt-4.1` | `GITHUB_TOKEN`       |
+| Custom provider | `myprovider/my-model`          | Provider-specific    |
 
 The provider account must have sufficient credits or quota. For providers not built into OpenCode, see [Custom providers](docs/custom-providers.md).
 
@@ -99,36 +100,32 @@ The provider account must have sufficient credits or quota. For providers not bu
 When `model` is left empty, the action probes a comma-separated fallback chain and selects the first reachable entry. `models-review` applies to review runs (`pull_request` triggers, `/review-pr`, and `/oc review`); `models-fix` applies to everything else. Entries are:
 
 - `cf:<model>` — probed through the Cloudflare Workers AI OpenAI-compatible endpoint; requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. Selected as `cloudflare-workers-ai/<model>` and registered on the built-in provider.
-- `zen:<model>` — probed through the opencode.ai Zen gateway; requires `OPENCODE_API_KEY`. Selected as `opencode/<model>`.
-- `<provider>/<model>` — selected without probing; the caller supplies the provider's credentials.
+- `zen:<model>` — probed through the opencode.ai Zen gateway; requires `OPENCODE_API_KEY`. Selected as `opencode/<model>`. `zengo:<model>` targets the Zen Go gateway and is selected as `opencode-go/<model>`.
+- `gh:<model>` — probed through GitHub Models (`https://models.github.ai`); requires `GITHUB_TOKEN` with `models: read` on the job. Selected as `github-models/<model>`; the action emits the provider registration because OpenCode has no built-in `github-models` provider.
+- `<provider>:<model>` — probed through the provider's OpenAI-compatible endpoint (or its native API for `anthropic:` and `google:`); requires the provider's API-key env var. Selected as `<provider>/<model>`. Supported prefixes: `anthropic` (alias `claude`), `openai`, `openrouter`, `google` (alias `gemini`; accepts `GOOGLE_GENERATIVE_AI_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_API_KEY`), `groq`, `mistral`, `deepseek`, `xai`, `cerebras`, `moonshotai` (alias `moonshot`), `github-copilot` (alias `copilot`), `opencode`, `opencode-go`, `cloudflare-workers-ai`, and `github-models`.
+- `<provider>/<model>` — selected without probing; the caller supplies the provider's credentials. Model IDs containing `:` (such as OpenRouter's `...:free` suffix) stay bare entries, since a probe prefix never contains `/`.
 
-The job fails if no chain entry answers, so pin `model` when you need a guaranteed selection.
-
-## Sakura AI Engine model synchronization
-
-The optional [Sakura model synchronization workflow](.github/workflows/sync-sakura-models.yml) discovers chat-capable Sakura AI Engine models and opens or updates a pull request when the catalog changes. Configure the `SAKURA_AI_ENGINE_API_KEY` repository secret before enabling it.
-
-The workflow uses the repository-provided `GITHUB_TOKEN` with `contents: write` and `pull-requests: write`; no additional GitHub token secret is required. GitHub does not create new workflow runs for events triggered by `GITHUB_TOKEN`, so pull requests created by this workflow do not automatically trigger `pull_request` workflows. See [GitHub's `GITHUB_TOKEN` documentation](https://docs.github.com/en/actions/concepts/security/github_token).
+The default chains only span free-capable endpoints (Cloudflare Workers AI, OpenCode Zen, GitHub Models, and OpenRouter `:free` models) so an unconfigured run never spends money. Add paid providers through an explicit chain or the `model` input. The job fails if no chain entry answers, so pin `model` when you need a guaranteed selection.
 
 ## Inputs
 
-| Input                 | Default                   | Description                                                                                                                                                             |
-| --------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`               | Probe the chains          | Model in `provider/model` format. Empty probes `models-review`/`models-fix`.                                                                                            |
-| `models-review`       | Cloudflare then Zen chain | Comma-separated probe chain for review runs. Entries: `cf:<model>`, `zen:<model>`, or bare `provider/model`.                                                            |
-| `models-fix`          | Cloudflare then Zen chain | Comma-separated probe chain for non-review runs. Same entry syntax as `models-review`.                                                                                  |
-| `guard-path-leaks`    | `true`                    | Fail the job when a comment posted by this run leaks a `@/` or `/tmp/` path token.                                                                                      |
-| `job-started-at`      | Run step start            | Epoch the job started; anchors the shared agent deadline so the single retry cannot overrun the budget.                                                                 |
-| `agent`               | `build`                   | Primary agent. A slash command can override it.                                                                                                                         |
-| `prompt`              | Event comment             | Fixed prompt to use instead of the triggering comment.                                                                                                                  |
-| `mentions`            | `/opencode,/oc`           | Comma-separated trigger phrases.                                                                                                                                        |
-| `variant`             | -                         | Provider-specific reasoning effort; leave empty unless supported. See [Custom providers](docs/custom-providers.md#variants-for-custom-providers).                       |
-| `share`               | `false`                   | Share the OpenCode session.                                                                                                                                             |
-| `use-github-token`    | `false`                   | Use the workflow token instead of the default App-token flow.                                                                                                           |
-| `opencode-version`    | `latest`                  | OpenCode version to install. `/review-pr` requires 1.2.14+; the bundled Sakura provider's `chunkTimeout` needs 1.2.25+ (older pins fall back to the request `timeout`). |
-| `use-bundled-toolkit` | `true`                    | Use the bundled agents, commands, skills, and configuration.                                                                                                            |
-| `timeout-minutes`     | `60`                      | Stop OpenCode after this many minutes.                                                                                                                                  |
-| `oidc-base-url`       | `https://api.opencode.ai` | OIDC exchange URL for a custom GitHub App installation.                                                                                                                 |
+| Input                 | Default                   | Description                                                                                                                                                          |
+| --------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`               | Probe the chains          | Model in `provider/model` format. Empty probes `models-review`/`models-fix`.                                                                                         |
+| `models-review`       | Free-capable probe chain  | Comma-separated probe chain for review runs. Entries: `<prefix>:<model>` (probed) or bare `provider/model` (trusted). See [Model probe chains](#model-probe-chains). |
+| `models-fix`          | Free-capable probe chain  | Comma-separated probe chain for non-review runs. Same entry syntax as `models-review`.                                                                               |
+| `guard-path-leaks`    | `true`                    | Fail the job when a comment posted by this run leaks a `@/` or `/tmp/` path token.                                                                                   |
+| `job-started-at`      | Run step start            | Epoch the job started; anchors the shared agent deadline so the single retry cannot overrun the budget.                                                              |
+| `agent`               | `build`                   | Primary agent. A slash command can override it.                                                                                                                      |
+| `prompt`              | Event comment             | Fixed prompt to use instead of the triggering comment.                                                                                                               |
+| `mentions`            | `/opencode,/oc`           | Comma-separated trigger phrases.                                                                                                                                     |
+| `variant`             | -                         | Provider-specific reasoning effort; leave empty unless supported. See [Custom providers](docs/custom-providers.md#variants-for-custom-providers).                    |
+| `share`               | `false`                   | Share the OpenCode session.                                                                                                                                          |
+| `use-github-token`    | `false`                   | Use the workflow token instead of the default App-token flow.                                                                                                        |
+| `opencode-version`    | `latest`                  | OpenCode version to install. `/review-pr` requires 1.2.14+.                                                                                                          |
+| `use-bundled-toolkit` | `true`                    | Use the bundled agents, commands, skills, and configuration.                                                                                                         |
+| `timeout-minutes`     | `60`                      | Stop OpenCode after this many minutes.                                                                                                                               |
+| `oidc-base-url`       | `https://api.opencode.ai` | OIDC exchange URL for a custom GitHub App installation.                                                                                                              |
 
 Direct `workflow_dispatch` uses the same inputs as `workflow_call`; a non-empty `prompt` is required to run the job, and an empty `model` triggers the probe chains.
 

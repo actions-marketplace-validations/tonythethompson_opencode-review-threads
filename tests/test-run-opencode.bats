@@ -49,7 +49,7 @@ setup() {
 }
 
 @test "variant validation always accepts an empty variant" {
-  for model in sakura/preview/Kimi-K2.7-Code myprovider/my-model ''; do
+  for model in demo/preview-model myprovider/my-model ''; do
     run env USE_BUNDLED_TOOLKIT=true REVIEW_ONLY=false \
       bash -euo pipefail -c '
         source "$1"
@@ -66,7 +66,7 @@ setup() {
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ "${run_script}" "${lib_script}" "${BATS_TEST_TMPDIR}/missing.jsonc"
   [ "${status}" -eq 0 ]
   [[ "${output}" == "::warning::"* ]]
@@ -78,7 +78,7 @@ setup() {
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
+      opencode_validate_variant demo/preview-model thinking "$3"
     ' _ "${run_script}" "${lib_script}" "${bundled_config}"
   [ "${status}" -eq 0 ]
   [[ "${output}" == "::warning::"* ]]
@@ -119,12 +119,17 @@ EOF
 }
 
 @test "authoritative review validation rejects a variant when bundled variants are empty" {
+  fixture="${BATS_TEST_TMPDIR}/opencode.jsonc"
+  cat > "${fixture}" << 'EOF'
+{"provider":{"demo":{"models":{"preview-model":{"variants":{}}}}}}
+EOF
+
   run env USE_BUNDLED_TOOLKIT=true REVIEW_ONLY=true GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
     bash -euo pipefail -c '
       source "$1"
       source "$2"
-      opencode_validate_variant sakura/preview/Kimi-K2.7-Code thinking "$3"
-    ' _ "${run_script}" "${lib_script}" "${bundled_config}"
+      opencode_validate_variant demo/preview-model thinking "$3"
+    ' _ "${run_script}" "${lib_script}" "${fixture}"
   [ "${status}" -eq 1 ]
   [[ "${output}" == "::error::"* ]]
   [[ "${output}" == *"declares no variants"* ]]
@@ -177,7 +182,7 @@ EOF
 @test "bundled model registry declares an explicit variants object for every model" {
   run bash -euo pipefail -c '
     source "$1"
-    opencode_jsonc_to_json < "$2" | jq -e "[.provider[].models[] | has(\"variants\")] | all"
+    opencode_jsonc_to_json < "$2" | jq -e "[.provider[]?.models[]? | has(\"variants\")] | all"
   ' _ "${lib_script}" "${bundled_config}"
   [ "${status}" -eq 0 ]
 }
@@ -191,7 +196,7 @@ EOF
     'printf "%s\n" "$*" >"${INVOCATION_FILE}"' > "${fake_bin}/opencode"
   chmod +x "${fake_bin}/opencode"
   cat > "${fake_action}/.opencode/opencode.jsonc" << 'EOF'
-{"provider":{"sakura":{"models":{"preview/Kimi-K2.7-Code":{"variants":{}}}}}}
+{"provider":{"demo":{"models":{"preview-model":{"variants":{}}}}}}
 EOF
 
   run env \
@@ -202,7 +207,7 @@ EOF
     PROMPT="explicit prompt" \
     AGENT="build" \
     MENTIONS="/oc" \
-    MODEL="sakura/preview/Kimi-K2.7-Code" \
+    MODEL="demo/preview-model" \
     VARIANT="thinking" \
     REVIEW_ONLY="false" \
     USE_BUNDLED_TOOLKIT="true" \
@@ -224,7 +229,7 @@ EOF
     'printf "%s\n" "$*" >"${INVOCATION_FILE}"' > "${fake_bin}/opencode"
   chmod +x "${fake_bin}/opencode"
   cat > "${fake_action}/.opencode/opencode.jsonc" << 'EOF'
-{"provider":{"sakura":{"models":{"preview/Kimi-K2.7-Code":{"variants":{}}}}}}
+{"provider":{"demo":{"models":{"preview-model":{"variants":{}}}}}}
 EOF
 
   run env \
@@ -237,7 +242,7 @@ EOF
     PROMPT="/review-pr" \
     AGENT="build" \
     MENTIONS="/oc" \
-    MODEL="sakura/preview/Kimi-K2.7-Code" \
+    MODEL="demo/preview-model" \
     VARIANT="thinking" \
     REVIEW_ONLY="true" \
     USE_BUNDLED_TOOLKIT="true" \
