@@ -37,7 +37,7 @@ jobs:
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
 ```
 
-For comment events, the reusable workflow accepts comments only from `OWNER`, `MEMBER`, or `COLLABORATOR` author associations. On non-comment events, a non-empty `prompt` is required.
+For comment events, the reusable workflow accepts comments only from `OWNER`, `MEMBER`, `COLLABORATOR`, or `CONTRIBUTOR` author associations (`CONTRIBUTOR` covers org members whose private membership surfaces as `CONTRIBUTOR` in event payloads). On non-comment events, a non-empty `prompt` is required.
 
 ## Pull request review
 

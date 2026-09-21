@@ -155,7 +155,7 @@ jobs:
       && (
         inputs.model != ''
         || (
-          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR","CONTRIBUTOR"]'), github.event.pull_request.author_association)
           && (! github.event.pull_request.draft)
           && github.event.pull_request.user.type != 'Bot'
         )
