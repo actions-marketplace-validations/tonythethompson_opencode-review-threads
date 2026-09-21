@@ -119,15 +119,13 @@ If confirmed findings or material verification notes remain but none has a valid
 
 If at least one valid inline anchor remains, every anchorable confirmed finding must be submitted in the `comments` array; never return anchorable findings only as top-level assistant text.
 
-Write only `$HOME/.config/opencode/review-state/initial.json` as `{body, comments}`. The helper supplies the trusted commit and review event. Normalize each published inline severity to exactly `critical`, `important`, or `suggestion`. Every inline comment body must begin:
+Write only `$HOME/.config/opencode/review-state/initial.json` as `{body, comments}`. The helper supplies the trusted commit and review event. `body` is a single short header line such as `Automated review: <N> inline finding(s); the summary follows as a comment.` It never carries the findings index, finding text, or verification notes. The action posts your final assistant output as a separate pull request comment, so a summary in `body` would duplicate it and sandwich the threads between near-identical texts. Normalize each published inline severity to exactly `critical`, `important`, or `suggestion`. Every inline comment body must begin:
 
 ```text
 **<critical|important|suggestion> · <dynamic-role>**
 
 <concise finding>
 ```
-
-If `summary_only` findings or material verification notes also remain, list them in the nonempty top-level `body`; otherwise the body may contain only the inline-finding count/status.
 
 Then run, in order:
 
@@ -138,12 +136,14 @@ bash "$HOME/.config/opencode/scripts/review-pr-submit.sh" submit-initial
 
 Fix payload validation errors only before submission. After validation succeeds, seal the payload and invoke `submit-initial` exactly once. Do not complete a PR-mode findings path until that submission succeeds. Any submission failure terminates the review without retry, fallback posting, or emitting anchorable findings as assistant-only output.
 
-After successful submission, write only `{body}` to `$HOME/.config/opencode/review-state/update.json` and run:
+After successful submission, write the same header line as `{body}` to `$HOME/.config/opencode/review-state/update.json` and run:
 
 ```bash
 bash "$HOME/.config/opencode/scripts/review-pr-submit.sh" update
 ```
 
-The trusted helper derives repository, PR, pinned commit, review ID, endpoint, and authentication from trusted state; never pass or override them. If GitHub rejects an inline anchor, fail rather than retrying with a different publication path. After successful inline submission, do not repeat findings in the final assistant output.
+The trusted helper derives repository, PR, pinned commit, review ID, endpoint, and authentication from trusted state; never pass or override them. If GitHub rejects an inline anchor, fail rather than retrying with a different publication path.
+
+Your final assistant output is the canonical review summary; the action posts it as a follow-up comment on the pull request, after the review and its threads. Keep it an index, never a restatement: open with a link to the submitted review (the `submit-initial` response carries its `html_url`) and a one-line overall assessment; then one line per inline finding with file:line, severity, and short title, without repeating finding bodies; then an "Out of diff" section listing any `summary_only` findings and material verification notes with the file(s)/line(s) they cover. Since the review body stays a stub, this comment is the only place the summary appears and must stand alone.
 
 Do not clean, reset, restore, stash, commit, push, install dependencies, or run repository QA/format/generation commands as part of review.
