@@ -136,8 +136,15 @@ case "${operation}" in
     opencode_review_verify_commit "${repo}" "${head_sha}" \
       || fail "Pinned PR commit cannot be read."
 
-    compare_metadata="$(gh api "repos/${repo}/compare/${base_sha}...${head_sha}")" \
-      || fail "Failed to read the pinned pull request comparison."
+    review_base="$(opencode_review_incremental_base "${repo}" "${number}" "${base_sha}")"
+    if ! compare_metadata="$(gh api "repos/${repo}/compare/${review_base}...${head_sha}")"; then
+      [[ "${review_base}" != "${base_sha}" ]] \
+        || fail "Failed to read the pinned pull request comparison."
+      echo "::warning::Incremental review base ${review_base} is not comparable to the pinned head; falling back to the pull request base." >&2
+      review_base="${base_sha}"
+      compare_metadata="$(gh api "repos/${repo}/compare/${review_base}...${head_sha}")" \
+        || fail "Failed to read the pinned pull request comparison."
+    fi
     compare_files="$(normalize_compare_files <<< "${compare_metadata}")" \
       || fail "Pinned pull request comparison contained invalid file metadata."
     metadata_snapshot="$(normalize_metadata "${metadata}" "${base_sha}" "${head_sha}" "${number}" "${compare_files}")" \
@@ -148,8 +155,14 @@ case "${operation}" in
     trap 'rm -f "${context_tmp}" "${metadata_tmp}"' EXIT
     jq -n --arg repository "${repo}" --arg pr_number "${number}" \
       --arg base_sha "${base_sha}" --arg head_sha "${head_sha}" \
-      '{repository: $repository, pr_number: ($pr_number | tonumber), base_sha: $base_sha, head_sha: $head_sha}' \
-      > "${context_tmp}"
+      --arg review_base "${review_base}" \
+      '{
+        repository: $repository,
+        pr_number: ($pr_number | tonumber),
+        base_sha: $base_sha,
+        head_sha: $head_sha,
+        review_base: $review_base
+      }' > "${context_tmp}"
     printf '%s\n' "${metadata_snapshot}" > "${metadata_tmp}"
     chmod 600 "${context_tmp}" "${metadata_tmp}"
     mv -- "${metadata_tmp}" "${metadata_file}"
@@ -160,7 +173,7 @@ case "${operation}" in
   metadata)
     trusted_context="$(opencode_review_trusted_context)" \
       || fail "Pinned review context is unavailable or the pinned commit cannot be read."
-    IFS=$'\t' read -r repo number base_sha head_sha <<< "${trusted_context}"
+    IFS=$'\t' read -r repo number base_sha head_sha _review_base <<< "${trusted_context}"
     [[ -s "${metadata_file}" ]] || fail "Pinned review metadata is unavailable."
     metadata="$(jq -ce \
       --argjson expected_number "${number}" \
@@ -181,9 +194,9 @@ case "${operation}" in
   diff)
     trusted_context="$(opencode_review_trusted_context)" \
       || fail "Pinned review context is unavailable or the pinned commit cannot be read."
-    IFS=$'\t' read -r repo number base_sha head_sha <<< "${trusted_context}"
+    IFS=$'\t' read -r repo number _base_sha head_sha review_base <<< "${trusted_context}"
     exec gh api -H 'Accept: application/vnd.github.diff' \
-      "repos/${repo}/compare/${base_sha}...${head_sha}"
+      "repos/${repo}/compare/${review_base}...${head_sha}"
     ;;
   validate)
     opencode_review_trusted_context > /dev/null \

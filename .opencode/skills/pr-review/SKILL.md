@@ -21,7 +21,9 @@ bash "$HOME/.config/opencode/scripts/review-pr-submit.sh" prepare
 bash "$HOME/.config/opencode/scripts/review-pr-gh.sh" context
 ```
 
-`context` pins the repository, PR, base SHA, head SHA, metadata, and changed-file set outside the untrusted checkout. If it succeeds, every later read, validation, and submission stays bound to that snapshot even when the live PR advances; outdated rendering is acceptable because the reviewed commit is explicit. Fail closed on incomplete GitHub comparison data.
+`context` pins the repository, PR, base SHA, head SHA, review-base SHA, metadata, and changed-file set outside the untrusted checkout. If it succeeds, every later read, validation, and submission stays bound to that snapshot even when the live PR advances; outdated rendering is acceptable because the reviewed commit is explicit. Fail closed on incomplete GitHub comparison data.
+
+When the PR already carries a review authored by `opencode-agent[bot]` or `github-actions[bot]`, `review_base` is that review's head commit instead of the PR base, so `diff` and `metadata` cover only commits since the previous review. Findings already posted on unchanged code are out of scope; never re-raise them. If the pinned diff is empty because the head was already reviewed, report that no new changes require review instead of repeating earlier findings.
 
 Read the snapshot only through:
 

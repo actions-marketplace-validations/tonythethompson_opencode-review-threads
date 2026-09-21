@@ -138,7 +138,7 @@ case "${operation}" in
     load_token_lib
     opencode_prepare_gh_token "${USE_GITHUB_TOKEN:-false}" || true
     context="$(opencode_review_trusted_context)" || fail "Pinned PR context is unavailable or the pinned commit cannot be read."
-    IFS=$'\t' read -r repo pr_number _base_sha head_sha <<< "${context}"
+    IFS=$'\t' read -r repo pr_number _base_sha head_sha _review_base <<< "${context}"
     request="$(mktemp "${TMPDIR:-/tmp}/opencode-pr-review.XXXXXX.json")"
     trap 'rm -f "${request}"' EXIT
     jq --arg commit_id "${head_sha}" '. + {commit_id: $commit_id, event: "COMMENT"}' <<< "${current_payload}" > "${request}"
@@ -156,7 +156,7 @@ case "${operation}" in
     load_token_lib
     opencode_prepare_gh_token "${USE_GITHUB_TOKEN:-false}" || true
     context="$(opencode_review_trusted_context)" || fail "Pinned PR context is unavailable or the pinned commit cannot be read."
-    IFS=$'\t' read -r repo pr_number _base_sha head_sha <<< "${context}"
+    IFS=$'\t' read -r repo pr_number _base_sha head_sha _review_base <<< "${context}"
     jq -e 'keys == ["body"] and (.body | type == "string" and length > 0)' "${update_payload}" > /dev/null \
       || fail "Invalid review update payload."
     [[ -f "${review_id_file}" ]] || fail "This run has no recorded review ID."

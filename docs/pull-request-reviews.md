@@ -73,6 +73,14 @@ If no finding can be anchored, the command returns a concise Markdown fallback i
 
 `opencode github run` may separately post the command's final completion message, so a run can produce the structured review plus at most one top-level completion comment.
 
+## Incremental reviews
+
+When the pull request already carries a submitted review authored by `opencode-agent[bot]` or `github-actions[bot]`, the pinned diff covers only commits since that review's head commit instead of the full base-to-head range. The first run on a pull request reviews `base...head`; later runs review `last-reviewed...head`. Findings already posted on unchanged code therefore do not re-enter the next run's scope and are never re-raised.
+
+The last-reviewed commit is read from the GitHub reviews API rather than from comments or repository state, so it cannot be spoofed by pull request content and it advances only when a review submission succeeds. Pending (never-submitted) reviews and reviews from other actors are ignored. If the previously reviewed commit is no longer comparable to the current head, for example after history rewrites, the run falls back to the full pull request range.
+
+When the head commit was already reviewed, the incremental diff is empty and the run reports that no new changes require review.
+
 ## Security
 
 `opencode-review-threads` treats the repository checkout, project OpenCode configuration, pull request content, and unverified git credentials as untrusted.

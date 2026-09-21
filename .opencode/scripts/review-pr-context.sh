@@ -16,7 +16,7 @@ opencode_review_sha_is_valid() {
 }
 
 opencode_review_pinned_context() {
-  local state_dir context_file repo pr_number base_sha head_sha event_pr
+  local state_dir context_file repo pr_number base_sha head_sha review_base event_pr
 
   state_dir="${HOME}/.config/opencode/review-state"
   context_file="${state_dir}/context.json"
@@ -26,15 +26,17 @@ opencode_review_pinned_context() {
   pr_number="$(jq -er '.pr_number | select(type == "number" and floor == . and . > 0) | tostring' "${context_file}")" || return 1
   base_sha="$(jq -er '.base_sha | select(type == "string")' "${context_file}")" || return 1
   head_sha="$(jq -er '.head_sha | select(type == "string")' "${context_file}")" || return 1
+  review_base="$(jq -er '(.review_base // .base_sha) | select(type == "string")' "${context_file}")" || return 1
 
   [[ "${repo}" =~ ^[^/]+/[^/]+$ ]] || return 1
   opencode_review_sha_is_valid "${base_sha}" || return 1
   opencode_review_sha_is_valid "${head_sha}" || return 1
+  opencode_review_sha_is_valid "${review_base}" || return 1
   [[ "${repo}" == "${GITHUB_REPOSITORY:-}" ]] || return 1
   event_pr="$(opencode_review_event_pr_number)" || return 1
   [[ "${event_pr}" == "${pr_number}" ]] || return 1
 
-  printf '%s\t%s\t%s\t%s\n' "${repo}" "${pr_number}" "${base_sha}" "${head_sha}"
+  printf '%s\t%s\t%s\t%s\t%s\n' "${repo}" "${pr_number}" "${base_sha}" "${head_sha}" "${review_base}"
 }
 
 opencode_review_verify_commit() {
@@ -49,12 +51,35 @@ opencode_review_verify_commit() {
   [[ "${resolved_sha}" == "${head_sha}" ]]
 }
 
+opencode_review_incremental_base() {
+  local repo="${1:-}" pr_number="${2:-}" base_sha="${3:-}"
+  local reviews last_sha
+
+  [[ "$#" -eq 3 ]] || return 1
+  reviews="$(gh api "repos/${repo}/pulls/${pr_number}/reviews" --paginate 2> /dev/null)" || reviews=""
+  last_sha="$(jq -r '
+    [.. | objects
+     | select((.commit_id? | type) == "string")
+     | select(.state? == "APPROVED" or .state? == "CHANGES_REQUESTED"
+              or .state? == "COMMENTED" or .state? == "DISMISSED")
+     | select(.user.login? == "opencode-agent[bot]" or .user.login? == "github-actions[bot]")]
+    | sort_by(.id) | (.[-1].commit_id // empty)
+  ' <<< "${reviews}" 2> /dev/null)" || last_sha=""
+
+  if opencode_review_sha_is_valid "${last_sha}" \
+    && opencode_review_verify_commit "${repo}" "${last_sha}"; then
+    printf '%s' "${last_sha}"
+    return 0
+  fi
+  printf '%s' "${base_sha}"
+}
+
 opencode_review_trusted_context() {
-  local context repo pr_number base_sha head_sha
+  local context repo pr_number base_sha head_sha review_base
 
   context="$(opencode_review_pinned_context)" || return 1
-  IFS=$'\t' read -r repo pr_number base_sha head_sha <<< "${context}"
+  IFS=$'\t' read -r repo pr_number base_sha head_sha review_base <<< "${context}"
   opencode_review_verify_commit "${repo}" "${head_sha}" || return 1
 
-  printf '%s\t%s\t%s\t%s\n' "${repo}" "${pr_number}" "${base_sha}" "${head_sha}"
+  printf '%s\t%s\t%s\t%s\t%s\n' "${repo}" "${pr_number}" "${base_sha}" "${head_sha}" "${review_base}"
 }

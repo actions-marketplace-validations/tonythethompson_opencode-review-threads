@@ -62,7 +62,7 @@ assert_trusted_context_rejected() {
   run_trusted_context
 
   [ "${status}" -eq 0 ]
-  [ "${output}" = $'octo/repo\t42\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ]
+  [ "${output}" = $'octo/repo\t42\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' ]
 }
 
 @test "trusted context rejects a repository mismatch" {
@@ -299,4 +299,213 @@ EOF
 
   [ "${status}" -eq 0 ]
   [ ! -e "${marker}" ]
+}
+
+write_gh_with_reviews() {
+  local reviews="${1:-[]}" verify_sha="${2:-}"
+  printf '%s\n' "${reviews}" > "${fake_home}/reviews.json"
+  cat > "${fake_bin}/gh" << GHSTUB
+#!/usr/bin/env bash
+set -euo pipefail
+case "\$*" in
+  "api repos/octo/repo/pulls/42/reviews --paginate")
+    cat '${fake_home}/reviews.json'
+    ;;
+  "api repos/octo/repo/commits/${verify_sha} --jq .sha")
+    [[ -n '${verify_sha}' ]] || exit 1
+    printf '%s\n' '${verify_sha}'
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+GHSTUB
+  chmod +x "${fake_bin}/gh"
+}
+
+run_incremental_base() {
+  local base="${1:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
+  run env HOME="${fake_home}" PATH="${fake_bin}:${PATH}" \
+    GITHUB_REPOSITORY="octo/repo" \
+    bash -c 'source "$1"; opencode_review_incremental_base octo/repo 42 "$2"' \
+    _ "${context_lib}" "${base}"
+}
+
+@test "incremental base falls back to the pull request base without prior reviews" {
+  write_gh_with_reviews '[]'
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]
+}
+
+@test "incremental base falls back when the reviews request fails" {
+  cat > "${fake_bin}/gh" << 'GHSTUB'
+#!/usr/bin/env bash
+exit 1
+GHSTUB
+  chmod +x "${fake_bin}/gh"
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]
+}
+
+@test "incremental base uses the last bot review head commit" {
+  local last=cccccccccccccccccccccccccccccccccccccccc
+  write_gh_with_reviews "$(jq -n --arg sha "${last}" '[
+    {id: 10, state: "COMMENTED", commit_id: "dddddddddddddddddddddddddddddddddddddddd", user: {login: "opencode-agent[bot]"}},
+    {id: 11, state: "COMMENTED", commit_id: $sha, user: {login: "opencode-agent[bot]"}}
+  ]')" "${last}"
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "${last}" ]
+}
+
+@test "incremental base ignores reviews from other actors" {
+  write_gh_with_reviews '[
+    {"id": 10, "state": "COMMENTED", "commit_id": "cccccccccccccccccccccccccccccccccccccccc", "user": {"login": "octocat"}},
+    {"id": 11, "state": "COMMENTED", "commit_id": "dddddddddddddddddddddddddddddddddddddddd", "user": {"login": "coderabbitai[bot]"}}
+  ]'
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]
+}
+
+@test "incremental base falls back when the last reviewed commit is unreadable" {
+  write_gh_with_reviews '[{"id":10,"state":"COMMENTED","commit_id":"cccccccccccccccccccccccccccccccccccccccc","user":{"login":"opencode-agent[bot]"}}]' \
+    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]
+}
+
+@test "incremental base keeps the last reviewed commit even when it is the pinned head" {
+  local head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  write_gh_with_reviews "$(jq -n --arg sha "${head}" '[
+    {id: 10, state: "COMMENTED", commit_id: $sha, user: {login: "opencode-agent[bot]"}}
+  ]')" "${head}"
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "${head}" ]
+}
+
+@test "incremental base accepts github-actions bot reviews" {
+  local last=cccccccccccccccccccccccccccccccccccccccc
+  write_gh_with_reviews "$(jq -n --arg sha "${last}" '[
+    {id: 10, state: "COMMENTED", commit_id: $sha, user: {login: "github-actions[bot]"}}
+  ]')" "${last}"
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "${last}" ]
+}
+
+@test "incremental base ignores pending reviews that were never submitted" {
+  local last=cccccccccccccccccccccccccccccccccccccccc
+  write_gh_with_reviews "$(jq -n --arg sha "${last}" '[
+    {id: 10, state: "COMMENTED", commit_id: "dddddddddddddddddddddddddddddddddddddddd", user: {login: "opencode-agent[bot]"}},
+    {id: 11, state: "PENDING", commit_id: $sha, user: {login: "opencode-agent[bot]"}}
+  ]')" "dddddddddddddddddddddddddddddddddddddddd"
+
+  run_incremental_base
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "dddddddddddddddddddddddddddddddddddddddd" ]
+}
+
+@test "diff reads the incremental range recorded in the pinned context" {
+  local base=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  local head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  local review=cccccccccccccccccccccccccccccccccccccccc
+  write_event
+  jq -n --arg repository octo/repo --argjson pr_number 42 \
+    --arg base_sha "${base}" --arg head_sha "${head}" --arg review_base "${review}" \
+    '{repository: $repository, pr_number: $pr_number, base_sha: $base_sha, head_sha: $head_sha, review_base: $review_base}' \
+    > "${fake_home}/.config/opencode/review-state/context.json"
+  cat > "${fake_bin}/gh" << GHSTUB
+#!/usr/bin/env bash
+set -euo pipefail
+case "\$*" in
+  "api repos/octo/repo/commits/${head} --jq .sha")
+    printf '%s\n' '${head}'
+    ;;
+  "api -H Accept: application/vnd.github.diff repos/octo/repo/compare/${review}...${head}")
+    printf 'diff-output\n'
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+GHSTUB
+  chmod +x "${fake_bin}/gh"
+
+  run env HOME="${fake_home}" PATH="${fake_bin}:${PATH}" \
+    GITHUB_REPOSITORY="octo/repo" GITHUB_EVENT_PATH="${event_path}" \
+    bash "${gh_helper}" diff
+
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "diff-output" ]
+}
+
+@test "context pins the incremental base from the last bot review" {
+  if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+    skip "jq --slurpfile process substitution is unavailable on Windows"
+  fi
+  local base=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  local head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  local last=cccccccccccccccccccccccccccccccccccccccc
+  jq -n --arg base "${base}" --arg head "${head}" '{
+    pull_request: {
+      number: 42,
+      title: "Review",
+      body: "Body",
+      base: {ref: "main", sha: $base},
+      head: {ref: "topic", sha: $head},
+      html_url: "https://github.com/octo/repo/pull/42"
+    }
+  }' > "${event_path}"
+  cat > "${fake_bin}/gh" << GHSTUB
+#!/usr/bin/env bash
+set -euo pipefail
+sha="\$(printf '%s' "\$*" | sed -n 's|api repos/octo/repo/commits/\([0-9a-f]*\) --jq .sha|\1|p')"
+if [[ -n "\${sha}" ]]; then
+  printf '%s\n' "\${sha}"
+  exit 0
+fi
+case "\$*" in
+  "api repos/octo/repo/pulls/42/reviews --paginate")
+    printf '[{"id":10,"state":"COMMENTED","commit_id":"${last}","user":{"login":"opencode-agent[bot]"}}]\n'
+    ;;
+  "api repos/octo/repo/compare/${last}...${head}")
+    printf '{"files":[{"filename":"file.txt","additions":1,"deletions":0}]}\n'
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+GHSTUB
+  chmod +x "${fake_bin}/gh"
+
+  run env HOME="${fake_home}" PATH="${fake_bin}:${PATH}" \
+    GITHUB_REPOSITORY="octo/repo" GITHUB_EVENT_PATH="${event_path}" \
+    bash -c 'mkdir -p "$1"; bash "$2" context' _ "${fake_home}/.config/opencode/review-state" "${gh_helper}"
+
+  [ "${status}" -eq 0 ]
+  jq -e --arg base "${base}" --arg head "${head}" --arg review "${last}" \
+    '.base_sha == $base and .head_sha == $head and .review_base == $review' \
+    <<< "${output}" > /dev/null
+  jq -e '.files[0].path == "file.txt" and .baseRefOid == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' \
+    "${fake_home}/.config/opencode/review-state/metadata.json" > /dev/null
 }
