@@ -1,10 +1,10 @@
-# opencode-action
+# opencode-review-threads
 
 Run an [OpenCode](https://opencode.ai/) agent from GitHub Actions, including issue and pull request comments, pull request reviews, and manually dispatched tasks.
 
-[![CI](https://github.com/tonythethompson/opencode-action/actions/workflows/ci.yml/badge.svg)](https://github.com/tonythethompson/opencode-action/actions/workflows/ci.yml)
+[![CI](https://github.com/tonythethompson/opencode-review-threads/actions/workflows/ci.yml/badge.svg)](https://github.com/tonythethompson/opencode-review-threads/actions/workflows/ci.yml)
 
-This is a fork of [dceoy/opencode-action](https://github.com/dceoy/opencode-action) kept in sync with upstream. Everything upstream provides still works; this fork adds resilience features on top:
+Originally forked from [dceoy/opencode-action](https://github.com/dceoy/opencode-action). Everything upstream provides still works; this action adds structured reviews and resilience features on top:
 
 - **Model probe chains** — `model` is optional. When empty, `models-review`/`models-fix` fallback chains are probed in order across the providers you have credentials for (Cloudflare Workers AI, OpenCode Zen, GitHub Models, OpenRouter, Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek, xAI, Cerebras, Moonshot, and bare `provider/model` entries selected unprobed) and the first reachable model wins. Defaults only span free-capable providers. See [Model probe chains](#model-probe-chains).
 - **Verified install** — the OpenCode release asset's sha256 digest is checked before extraction instead of piping the installer to a shell.
@@ -47,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run OpenCode
-        uses: tonythethompson/opencode-action@cdf8a327010611fb0f355bb232d5f7a46dd4c2a3  # v0.9.0
+        uses: tonythethompson/opencode-review-threads@cdf8a327010611fb0f355bb232d5f7a46dd4c2a3  # v0.9.0
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}

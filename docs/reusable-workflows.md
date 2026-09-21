@@ -1,6 +1,6 @@
 # Reusable workflows
 
-`opencode-action` publishes two reusable GitHub Actions workflows under `.github/workflows`. Call them as jobs with `uses`, then pass action configuration through `with` and provider credentials through `secrets`.
+`opencode-review-threads` publishes two reusable GitHub Actions workflows under `.github/workflows`. Call them as jobs with `uses`, then pass action configuration through `with` and provider credentials through `secrets`.
 
 The examples below pin the reusable workflow definition to a full commit SHA. Inside the called workflow, `uses: $/.` references the action at the repository root from the same repository and running commit, so the workflow reference also pins the action implementation without a second checkout or a separate action revision input.
 
@@ -31,7 +31,7 @@ jobs:
       id-token: write
       actions: read
       models: read
-    uses: tonythethompson/opencode-action/.github/workflows/opencode-bot.yml@cdf8a327010611fb0f355bb232d5f7a46dd4c2a3  # v0.9.0
+    uses: tonythethompson/opencode-review-threads/.github/workflows/opencode-bot.yml@cdf8a327010611fb0f355bb232d5f7a46dd4c2a3  # v0.9.0
     with:
       model: opencode-go/kimi-k3
     secrets:
@@ -61,7 +61,7 @@ jobs:
       id-token: write
       actions: read
       models: read
-    uses: tonythethompson/opencode-action/.github/workflows/opencode-review.yml@cdf8a327010611fb0f355bb232d5f7a46dd4c2a3  # v0.9.0
+    uses: tonythethompson/opencode-review-threads/.github/workflows/opencode-review.yml@cdf8a327010611fb0f355bb232d5f7a46dd4c2a3  # v0.9.0
     with:
       model: openrouter/openrouter/free
     secrets:

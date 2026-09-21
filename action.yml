@@ -1,6 +1,6 @@
 ---
-name: OpenCode GitHub Action
-description: Run OpenCode in GitHub Actions workflows
+name: OpenCode Review Threads
+description: Run OpenCode in GitHub Actions with structured pull request reviews and resolvable inline threads
 branding:
   icon: square
   color: black
@@ -11,7 +11,7 @@ inputs:
       Model to use, in provider/model format. When empty, the action probes the
       models-review or models-fix chain (chosen by task type) and selects the
       first reachable entry instead.
-    default: ''
+    default: ""
   models-review:
     required: false
     description: >-
@@ -43,13 +43,13 @@ inputs:
     description: >-
       Whether to snapshot PR comments before the run and fail the job when a
       comment posted by this run contains a leaked `@/` or `/tmp/` path token.
-    default: 'true'
+    default: "true"
   job-started-at:
     required: false
     description: >-
       Epoch (seconds) when the job started, used to anchor the shared agent
       deadline. Defaults to the moment the run step begins.
-    default: ''
+    default: ""
   agent:
     required: false
     description: Agent to use as the run's default_agent. A slash command's frontmatter agent takes precedence.
@@ -57,15 +57,15 @@ inputs:
   share:
     required: false
     description: Whether to share the opencode session
-    default: 'false'
+    default: "false"
   prompt:
     required: false
     description: Custom prompt to override the default prompt. Leading Markdown slash commands are expanded before opencode github run.
-    default: ''
+    default: ""
   use-github-token:
     required: false
     description: Whether to use GITHUB_TOKEN directly instead of OpenCode App token exchange. When true, skips OIDC and uses the GITHUB_TOKEN env var.
-    default: 'false'
+    default: "false"
   mentions:
     required: false
     description: Comma-separated list of trigger phrases (case-insensitive)
@@ -75,7 +75,7 @@ inputs:
     description: >-
       Model variant for provider-specific reasoning effort (e.g., high, max, minimal).
       Empty runs every model with its default configuration. The action rejects a nonempty value only when its bundled model registry is known to be authoritative; otherwise the requested variant is passed through unchanged for OpenCode/provider validation.
-    default: ''
+    default: ""
   oidc-base-url:
     required: false
     description: Base URL for OIDC token exchange API. Only required when running a custom GitHub App install.
@@ -87,11 +87,11 @@ inputs:
   use-bundled-toolkit:
     required: false
     description: Whether to use the action's bundled .opencode/ agents, commands, skills, and supporting configuration.
-    default: 'true'
+    default: "true"
   timeout-minutes:
     required: false
     description: Maximum minutes to let 'opencode github run' execute before it is killed (uses 'timeout'/'gtimeout' when available; otherwise runs without an enforced timeout).
-    default: '60'
+    default: "60"
 outputs:
   opencode-version:
     description: OpenCode version resolved for this run.
@@ -159,7 +159,7 @@ runs:
     - name: Cache OpenCode
       id: cache
       if: steps.review_mode.outputs.enabled != 'true'
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.opencode/bin
         key: opencode-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.opencode-version }}
@@ -176,7 +176,7 @@ runs:
         "${ACTION_PATH}/scripts/install-opencode.sh"
     - name: Add OpenCode to PATH
       shell: bash -euo pipefail {0}
-      run: >  # zizmor: ignore[github-env] fixed path, not attacker-controlled
+      run: > # zizmor: ignore[github-env] fixed path, not attacker-controlled
         echo "${HOME}/.opencode/bin" | tee -a "${GITHUB_PATH}"
     - name: Snapshot PR comments before agent run
       if: inputs.guard-path-leaks == 'true'

@@ -75,7 +75,7 @@ If no finding can be anchored, the command returns a concise Markdown fallback i
 
 ## Security
 
-`opencode-action` treats the repository checkout, project OpenCode configuration, pull request content, and unverified git credentials as untrusted.
+`opencode-review-threads` treats the repository checkout, project OpenCode configuration, pull request content, and unverified git credentials as untrusted.
 
 ### Review isolation
 
