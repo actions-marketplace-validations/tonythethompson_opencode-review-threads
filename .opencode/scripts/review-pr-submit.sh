@@ -112,8 +112,7 @@ case "${operation}" in
   validate-initial)
     [[ ! -e "${submission_attempt_file}" ]] \
       || fail "Initial review submission was already attempted for this run."
-    [[ ! -e "${validated_payload}" ]] \
-      || fail "Initial review payload already passed validation and is sealed."
+    rm -f "${validated_payload}"
     validate_initial_payload
     validated_payload_tmp="$(mktemp "${state_dir}/validated-initial.XXXXXX.json")"
     trap 'rm -f "${validated_payload_tmp}"' EXIT
