@@ -81,8 +81,9 @@ The `concurrency` group cancels the previous run when a new commit lands on the 
 The called workflow enforces its own trigger policy, so callers do not need a job-level `if:` gate. A review job runs only when all of these hold:
 
 - the event is `pull_request` and the pull request's head branch belongs to the same repository (fork pull requests are skipped because GitHub withholds secrets from them anyway),
+- the triggering actor is not a bot account, so a synchronize caused by an automation push (including this action's own fix commits) does not launch a run that cannot pass the agent's permission check,
 - the pull request author is a non-bot `OWNER`, `MEMBER`, `COLLABORATOR`, or `CONTRIBUTOR`, and the pull request is not a draft,
-- or the caller set `model`, which bypasses the author/draft/bot checks as an explicit opt-in.
+- or the caller set `model`, which bypasses the author/draft checks as an explicit opt-in (the actor check still applies because it is a runtime requirement, not a policy choice).
 
 For `pull_request` events from public forks, GitHub withholds repository Actions secrets and makes `GITHUB_TOKEN` read-only; Dependabot pull requests have the same restrictions. Private-fork behavior can differ when repository settings explicitly allow secrets or write tokens.
 
