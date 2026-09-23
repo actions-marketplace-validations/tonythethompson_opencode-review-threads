@@ -326,3 +326,14 @@ the current pull request.
   is addressing _as not valid_) — and reply on each thread with the reason when possible.
   Do not resolve a thread you genuinely could not address. Do not modify files for invalid
   or duplicate feedback.
+
+## `/oc autopilot`
+
+When a user message is exactly `/oc autopilot` or begins with `/oc autopilot`, load and
+follow the `autopilot` skill for a single merge-readiness pass on this pull request:
+merge conflicts first, then unresolved review threads, then failing CI. The same working
+tree rules apply — the action auto-commits and pushes what you leave, and your final
+reply is posted as the summary comment, so report every thread disposition and remaining
+blocker there. Escalation is by summary comment, not by stopping mid-run: surface
+security, auth, billing, migration, and concurrency questions explicitly instead of
+guessing.
