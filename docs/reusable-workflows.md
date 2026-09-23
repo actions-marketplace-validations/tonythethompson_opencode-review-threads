@@ -33,12 +33,12 @@ jobs:
       && (github.event_name == 'workflow_dispatch'
           || contains('OWNER,MEMBER,COLLABORATOR,CONTRIBUTOR', github.event.comment.author_association))
     permissions:
-      contents: read
+      contents: write
       issues: write
       pull-requests: write
       id-token: write
       actions: read
-    uses: tonythethompson/opencode-review-threads/.github/workflows/opencode-bot.yml@e23b9ffded084693525c8b8caa62dd8d9e2b4f41  # v1.3.2
+    uses: tonythethompson/opencode-review-threads/.github/workflows/opencode-bot.yml@c1c9bc9bdae03bc36259caf78a1eb8a4209706cc  # v1.4.1
     with:
       model: opencode-go/kimi-k3
     secrets:
@@ -75,7 +75,7 @@ jobs:
       pull-requests: write
       id-token: write
       actions: read
-    uses: tonythethompson/opencode-review-threads/.github/workflows/opencode-review.yml@e23b9ffded084693525c8b8caa62dd8d9e2b4f41  # v1.3.2
+    uses: tonythethompson/opencode-review-threads/.github/workflows/opencode-review.yml@c1c9bc9bdae03bc36259caf78a1eb8a4209706cc  # v1.4.1
     with:
       model: openrouter/openrouter/free
     secrets:
@@ -126,10 +126,10 @@ GitHub.com's `$/path` self repository syntax resolves to the repository and comm
 
 Pass only the provider secrets needed by the probe chain. The reusable workflows accept `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `OPENCODE_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MOONSHOT_API_KEY`, and `MISTRAL_API_KEY`. `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` enable `cf:` probe-chain entries, and `CONTEXT7_API_KEY` enables the bundled context7 MCP server. OpenCode's `cloudflare-workers-ai` provider reads `CLOUDFLARE_API_KEY` at runtime, so the workflows export that variable from `CLOUDFLARE_API_TOKEN` (a scoped Bearer token) unless `CLOUDFLARE_API_KEY` is passed explicitly.
 
-`GH_TOKEN` is optional. When omitted, the reusable workflow falls back to the caller's `github.token`. With `use-github-token: true`, that fallback is limited to `contents: read` by the called workflow even if the caller grants `contents: write`. For code-writing operations such as `/oc fix this`, pass a separately write-scoped `GH_TOKEN`; otherwise GitHub API writes to repository contents fail with `403`.
+`GH_TOKEN` is optional. When omitted, the reusable workflow falls back to the caller's `github.token`. With `use-github-token: true`, `opencode-bot.yml` requests `contents: write` so pushes succeed using that token.
 
 ## Permissions
 
-The reusable workflows request `contents: read`, `pull-requests: write`, `issues: write`, `id-token: write`, and `actions: read`. A called workflow can only maintain or reduce the caller's `GITHUB_TOKEN` permissions: the caller must grant the requested permissions, but its higher `contents` permission cannot override the called workflow's `contents: read` ceiling. A separately supplied `GH_TOKEN` is not governed by that `GITHUB_TOKEN` permission ceiling.
+`opencode-bot.yml` requests `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, and `actions: read`. Its calling job must grant `contents: write` or the run fails at startup. `opencode-review.yml` requests `contents: read`, `pull-requests: write`, `issues: write`, `id-token: write`, and `actions: read`. A called workflow can only maintain or reduce the caller's `GITHUB_TOKEN` permissions: the caller must grant the requested permissions. A separately supplied `GH_TOKEN` is not governed by that `GITHUB_TOKEN` permission ceiling.
 
 The examples keep `permissions`, `with`, and `secrets` under the calling job so their scopes are explicit: `permissions` controls the caller token, `with` configures the reusable workflow inputs, and `secrets` passes credentials.
