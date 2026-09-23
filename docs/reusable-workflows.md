@@ -28,6 +28,10 @@ concurrency:
 
 jobs:
   opencode:
+    if: >-
+      !endsWith(github.actor, '[bot]')
+      && (github.event_name == 'workflow_dispatch'
+          || contains('OWNER,MEMBER,COLLABORATOR,CONTRIBUTOR', github.event.comment.author_association))
     permissions:
       contents: read
       issues: write
@@ -44,6 +48,8 @@ jobs:
 The `concurrency` group serializes runs per issue or pull request; `cancel-in-progress: false` queues later triggers instead of cancelling a run that may be mid-commit.
 
 For comment events, the reusable workflow accepts comments only from `OWNER`, `MEMBER`, `COLLABORATOR`, or `CONTRIBUTOR` author associations (`CONTRIBUTOR` covers org members whose private membership surfaces as `CONTRIBUTOR` in event payloads). On non-comment events, a non-empty `prompt` is required.
+
+The caller-side `if:` gate is still required for bot actors. Comments from GitHub Apps such as `coderabbitai[bot]` or `amazon-q-developer[bot]` can carry `CONTRIBUTOR` association and pass the association check, but the reusable call then fails with `startup_failure` because bot-triggered events cannot satisfy the secrets and `id-token` requirements the call needs. Gating `github.actor` at the caller skips the run before the call is attempted; the reusable's internal checks never get a chance to reject it.
 
 ## Pull request review
 
