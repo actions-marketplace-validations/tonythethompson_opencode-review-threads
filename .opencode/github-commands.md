@@ -16,10 +16,10 @@ public comment.
   posted. A body that references a file is a bug, not a shortcut.
 - If you draft content in a temp file, **read it back and inline the full contents** before
   posting. When a reply is long, paste it — do not reference it.
-- The `@` form is only ever valid as a literal argument to the `gh` CLI (`-f body=@file`),
-  and only when you invoke `gh` directly in a shell. Even then, `gh api` does not reliably
-  expand it — assume it will post the literal token and always pass real content instead
-  (e.g. `-f body="$(cat file)"`).
+- The `@file` form is only ever valid as a **`-F` raw-field** argument to the `gh` CLI
+  (`-F body=@file` reads the file contents), and only when you invoke `gh` directly in a
+  shell. Lowercase `-f` never expands it: `-f body=@file` posts the literal `@file`
+  string. When in doubt pass real content instead (e.g. `-f body="$(cat file)"`).
 - **Mandatory self-check before finishing:** grep every body you are about to post for
   `@/` and `/tmp/`. If anything matches, fix it. The workflow fails the run when a posted
   comment leaks a path token, so a leak shows up as a red check — but never count on that;
@@ -105,12 +105,13 @@ behavior below applies whether the review is triggered by `/oc review` or by PR 
    creates a resolvable thread. Use the PR head SHA (`Head: { Sha: ... }` in the
    `<pull_request>` context) as `commit_id`, plus the file and line the finding is
    about. Use `gh` CLI with the `@` form ONLY when you are directly invoking `gh` in a
-   shell (the `@` must immediately follow `=`, with no surrounding quotes/spaces, so gh
-   reads the file):
+   shell. The `@` must immediately follow `=` on a **`-F` raw-field** flag, with no
+   surrounding quotes/spaces, for gh to read the file; lowercase `-f` posts the literal
+   `@path` string:
 
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr_number}/comments \
-     -f body=@finding.md \
+     -F body=@finding.md \
      -f path="src/example.ts" \
      -F line=42 \
      -f commit_id="$HEAD_SHA"
@@ -131,7 +132,7 @@ behavior below applies whether the review is triggered by `/oc review` or by PR 
 
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr_number}/comments \
-     -f body=@finding.md \
+     -F body=@finding.md \
      -f path="src/example.ts" \
      -f subject_type=file
    ```
@@ -140,7 +141,7 @@ behavior below applies whether the review is triggered by `/oc review` or by PR 
    the PR diff at all. Post **one issue comment per finding**:
 
    ```bash
-   gh api repos/{owner}/{repo}/issues/{pr_number}/comments -f body=@finding.md
+   gh api repos/{owner}/{repo}/issues/{pr_number}/comments -F body=@finding.md
    ```
 
    Derive `owner`/`repo` from `baseRepository.nameWithOwner` in the `<pull_request>`

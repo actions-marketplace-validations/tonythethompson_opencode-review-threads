@@ -82,8 +82,10 @@ gh api graphql -f query='mutation($id:ID!,$body:String!){addPullRequestReviewThr
 gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=THREAD_ID
 ```
 
-Write a long reason to a temp file and pass `-f body=@thread.md` — the `@` form is valid
-only when invoking `gh` directly in a shell, never through opencode's built-in tooling.
+Prefer an inline body. If a reason is long enough to draft in a temp file, pass it as
+`-F body=@thread.md`; capital `-F` is the raw-field flag that reads file contents,
+lowercase `-f` posts the literal `@path` string, and the comment-guard fails the run.
+The posted body must always be the reply text itself, never a path.
 Resolution can fail for threads owned by other integrations (`Resource not accessible
 by integration`). When it does, keep the explanatory reply, leave the thread open, and
 note it in the summary — do not retry in a loop and do not claim the thread was
