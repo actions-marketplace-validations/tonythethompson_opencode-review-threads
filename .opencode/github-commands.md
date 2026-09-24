@@ -193,9 +193,14 @@ Each finding comment should contain:
 
 1. **Severity** — `high` / `medium` / `low` (or `critical`).
 2. **Location** — `file:line` (or a line range).
-3. **Problem** — why it is wrong, grounded in the actual code.
+3. **Problem** — why it is wrong, grounded in the actual code. Keep it to a few
+   sentences (~80 words target): state the defect and the evidence, do not
+   narrate your verification process.
 4. **Suggested fix** — a GitHub `suggestion` fenced block (see "Committing behavior")
-   when the fix is a contiguous replacement, otherwise a description of the change needed.
+   when the fix is a contiguous replacement of the anchored lines, otherwise a
+   one-sentence description of the change needed. Anchor the comment's line
+   range to cover exactly the lines a `suggestion` block rewrites so the thread
+   is one-click committable.
 
 ### Review scope
 

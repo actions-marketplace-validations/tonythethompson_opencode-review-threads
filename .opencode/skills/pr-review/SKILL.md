@@ -129,6 +129,19 @@ Write only `$HOME/.config/opencode/review-state/initial.json` as `{body, comment
 <concise finding>
 ```
 
+Keep each inline body tight: lead with the defect, one or two sentences of
+evidence, then the fix — target under ~80 words. A reviewer scans every thread;
+the comment is the verdict, not the audit trail. Do not narrate the validation
+process or enumerate the places you checked for counterevidence.
+
+When the fix is a contiguous replacement of the anchored lines, end the comment
+with a GitHub `suggestion` fenced block whose content is the exact replacement
+for `start_line..line` — that makes the thread one-click committable. Anchor the
+comment's range to cover exactly the lines the suggestion rewrites; a suggestion
+spanning only part of a disjoint fix is worse than none. If the fix spans
+non-contiguous sites, say so in one sentence rather than padding the body with
+the full plan.
+
 Then run, in order:
 
 ```bash
