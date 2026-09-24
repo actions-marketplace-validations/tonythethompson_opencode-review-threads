@@ -352,11 +352,26 @@ _opencode_run_main() {
 
   opencode_configure_run
   output_file="$(mktemp)"
-  trap 'rm -f "${output_file}"' EXIT
+  trap 'rm -f "${output_file}"; [[ -z "${shim_dir:-}" ]] || rm -rf "${shim_dir}"' EXIT
   opencode_select_timeout_command "${timeout_minutes}"
 
+  local shim_dir real_gh shim_path=""
+  real_gh="$(command -v gh 2> /dev/null || true)"
+  if [[ -n "${real_gh}" && -f "${ACTION_PATH:-}/scripts/gh-app-token-shim.sh" ]]; then
+    shim_dir="$(mktemp -d)"
+    sed "s|__REAL_GH__|${real_gh}|g" \
+      "${ACTION_PATH}/scripts/gh-app-token-shim.sh" > "${shim_dir}/gh"
+    chmod +x "${shim_dir}/gh"
+    shim_path="${shim_dir}"
+  fi
+
   set +e
-  "${OPENCODE_TIMEOUT_COMMAND[@]}" opencode github run 2>&1 | tee "${output_file}"
+  if [[ -n "${shim_path}" ]]; then
+    PATH="${shim_path}:${PATH}" \
+      "${OPENCODE_TIMEOUT_COMMAND[@]}" opencode github run 2>&1 | tee "${output_file}"
+  else
+    "${OPENCODE_TIMEOUT_COMMAND[@]}" opencode github run 2>&1 | tee "${output_file}"
+  fi
   opencode_status="${PIPESTATUS[0]}"
   set -e
 
