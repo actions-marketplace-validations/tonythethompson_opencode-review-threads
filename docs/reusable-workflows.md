@@ -41,7 +41,7 @@ jobs:
     uses: tonythethompson/opencode-review-threads/.github/workflows/opencode-bot.yml@v1
     with:
       model: opencode-go/kimi-k3
-    secrets:
+    secrets:https://github.com/notifications?query=repo%3Atonythethompson%2Fopencode-review-threads
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
 ```
 
