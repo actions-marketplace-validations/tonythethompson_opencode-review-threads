@@ -40,10 +40,13 @@ EOF
 
   issue_file="${BATS_TEST_TMPDIR}/issue.json"
   pull_file="${BATS_TEST_TMPDIR}/pull.json"
-  printf '[{"id":11,"body":"old"}]\n' > "${issue_file}"
-  printf '[{"id":22,"body":"older"}]\n' > "${pull_file}"
+  printf '[{"id":11,"body":"old","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}}]\n' > "${issue_file}"
+  printf '[{"id":22,"body":"older","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}}]\n' > "${pull_file}"
   export FAKE_ISSUE_COMMENTS="${issue_file}"
   export FAKE_PULL_COMMENTS="${pull_file}"
+  export TMPDIR="${BATS_TEST_TMPDIR}/tmp"
+  mkdir -p "${TMPDIR}"
+  export GITHUB_RUN_ID="test-run-1"
 }
 
 @test "snapshot records sorted issue and review comment ids" {
@@ -62,7 +65,7 @@ EOF
 
 @test "verify passes clean new comments" {
   "${guard_script}" snapshot
-  printf '[{"id":11,"body":"old"},{"id":33,"body":"looks good to me"}]\n' > "${FAKE_ISSUE_COMMENTS}"
+  printf '[{"id":11,"body":"old","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}},{"id":33,"body":"looks good to me","created_at":"2999-01-01T00:00:00Z","user":{"login":"github-actions[bot]"}}]\n' > "${FAKE_ISSUE_COMMENTS}"
   run "${guard_script}" verify
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"No leaked path tokens"* ]]
@@ -70,7 +73,7 @@ EOF
 
 @test "verify fails when a new comment leaks an @path token" {
   "${guard_script}" snapshot
-  printf '[{"id":11,"body":"old"},{"id":33,"body":"see @/tmp/opencode/finding.md"}]\n' > "${FAKE_ISSUE_COMMENTS}"
+  printf '[{"id":11,"body":"old","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}},{"id":33,"body":"see @/tmp/opencode/finding.md","created_at":"2999-01-01T00:00:00Z","user":{"login":"github-actions[bot]"}}]\n' > "${FAKE_ISSUE_COMMENTS}"
   run "${guard_script}" verify
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"leaked path token"* ]]
@@ -78,8 +81,42 @@ EOF
 
 @test "verify fails when a new review comment leaks a /tmp/ path" {
   "${guard_script}" snapshot
-  printf '[{"id":22,"body":"older"},{"id":44,"body":"content lives in /tmp/opencode/x.md"}]\n' > "${FAKE_PULL_COMMENTS}"
+  printf '[{"id":22,"body":"older","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}},{"id":44,"body":"content lives in /tmp/opencode/x.md","created_at":"2999-01-01T00:00:00Z","user":{"login":"opencode-agent[bot]"}}]\n' > "${FAKE_PULL_COMMENTS}"
   run "${guard_script}" verify
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"leaked path token"* ]]
+}
+
+@test "verify ignores a leaked path from a different author (concurrent run)" {
+  "${guard_script}" snapshot
+  printf 'cached-app-tok\n' > "${TMPDIR}/opencode-app-token.${GITHUB_RUN_ID}"
+  printf '[{"id":22,"body":"older","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}},{"id":44,"body":"@/tmp/opencode/r1.md","created_at":"2999-01-01T00:00:00Z","user":{"login":"github-actions[bot]"}}]\n' > "${FAKE_PULL_COMMENTS}"
+  run "${guard_script}" verify
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"No leaked path tokens"* ]]
+}
+
+@test "verify still fails on a leaked path from this run's own identity" {
+  "${guard_script}" snapshot
+  printf 'cached-app-tok\n' > "${TMPDIR}/opencode-app-token.${GITHUB_RUN_ID}"
+  printf '[{"id":22,"body":"older","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}},{"id":44,"body":"@/tmp/opencode/r1.md","created_at":"2999-01-01T00:00:00Z","user":{"login":"opencode-agent[bot]"}}]\n' > "${FAKE_PULL_COMMENTS}"
+  run "${guard_script}" verify
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"leaked path token"* ]]
+}
+
+@test "verify ignores comments created before the snapshot" {
+  "${guard_script}" snapshot
+  printf '[{"id":11,"body":"old","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}},{"id":33,"body":"see @/tmp/leak.md","created_at":"2000-06-01T00:00:00Z","user":{"login":"github-actions[bot]"}}]\n' > "${FAKE_ISSUE_COMMENTS}"
+  run "${guard_script}" verify
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"No leaked path tokens"* ]]
+}
+
+@test "verify attributes github-actions[bot] comments under use-github-token" {
+  "${guard_script}" snapshot
+  printf '[{"id":11,"body":"old","created_at":"2000-01-01T00:00:00Z","user":{"login":"human"}},{"id":33,"body":"@/tmp/opencode/x.md","created_at":"2999-01-01T00:00:00Z","user":{"login":"github-actions[bot]"}}]\n' > "${FAKE_ISSUE_COMMENTS}"
+  run env USE_GITHUB_TOKEN=true "${guard_script}" verify
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"leaked path token"* ]]
 }

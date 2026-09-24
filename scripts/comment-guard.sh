@@ -17,11 +17,30 @@ _opencode_guard_state_dir() {
 opencode_comment_snapshot() {
   local before
   before="$(_opencode_guard_state_dir)/opencode-comments-before"
-  : > "${before}"
+  : >"${before}"
+  date -u '+%Y-%m-%dT%H:%M:%SZ' >"$(_opencode_guard_state_dir)/opencode-comments-ts"
   if [[ -n "${PR_NUM:-}" ]]; then
-    gh api "repos/${REPOSITORY}/issues/${PR_NUM}/comments" --paginate --jq '.[].id' >> "${before}"
-    gh api "repos/${REPOSITORY}/pulls/${PR_NUM}/comments" --paginate --jq '.[].id' >> "${before}"
+    gh api "repos/${REPOSITORY}/issues/${PR_NUM}/comments" --paginate --jq '.[].id' | tr -d '\r' >>"${before}"
+    gh api "repos/${REPOSITORY}/pulls/${PR_NUM}/comments" --paginate --jq '.[].id' | tr -d '\r' >>"${before}"
     sort -n -o "${before}" "${before}"
+  fi
+}
+
+# Logins this run could have posted under. With use-github-token the run only
+# ever writes as github-actions[bot]. In App-token mode the session's gh shim
+# and upstream's own posting both use the verified App identity once it is
+# cached; without a cached token the agent's calls fall back to the ambient
+# workflow token, so either identity may be ours. Scoping by author keeps a
+# concurrent run's leaked comment from failing this run's guard.
+_opencode_guard_authors() {
+  local bot_login="${OPENCODE_REVIEW_BOT_LOGIN:-opencode-agent[bot]}"
+  local app_cache="${TMPDIR:-/tmp}/opencode-app-token.${GITHUB_RUN_ID:-session}"
+  if [[ "${USE_GITHUB_TOKEN:-false}" == "true" ]]; then
+    jq -n '["github-actions[bot]"]'
+  elif [[ -s "${app_cache}" && "$(head -n 1 "${app_cache}")" != "DENIED" ]]; then
+    jq -n --arg l "${bot_login}" '[$l]'
+  else
+    jq -n --arg l "${bot_login}" '[$l, "github-actions[bot]"]'
   fi
 }
 
@@ -35,29 +54,39 @@ opencode_comment_verify() {
   review_json="${state_dir}/opencode-review-comments.json"
 
   [[ -n "${PR_NUM:-}" ]] || return 0
-  : > "${after}"
+  : >"${after}"
   if [[ ! -f "${before}" ]]; then
     echo "::warning::Comment snapshot is unavailable; no agent invocation was verified."
     return 0
   fi
 
-  gh api "repos/${REPOSITORY}/issues/${PR_NUM}/comments" --paginate --jq '.[].id' >> "${after}"
-  gh api "repos/${REPOSITORY}/pulls/${PR_NUM}/comments" --paginate --jq '.[].id' >> "${after}"
+  gh api "repos/${REPOSITORY}/issues/${PR_NUM}/comments" --paginate --jq '.[].id' | tr -d '\r' >>"${after}"
+  gh api "repos/${REPOSITORY}/pulls/${PR_NUM}/comments" --paginate --jq '.[].id' | tr -d '\r' >>"${after}"
   sort -n -o "${after}" "${after}"
-  comm -13 "${before}" "${after}" > "${new_ids}"
+  comm -13 "${before}" "${after}" >"${new_ids}"
   if [[ ! -s "${new_ids}" ]]; then
     echo "::notice::No new comments were posted by this invocation."
     return 0
   fi
 
-  gh api "repos/${REPOSITORY}/issues/${PR_NUM}/comments" --paginate --slurp | jq 'add' > "${issue_json}"
-  gh api "repos/${REPOSITORY}/pulls/${PR_NUM}/comments" --paginate --slurp | jq 'add' > "${review_json}"
+  gh api "repos/${REPOSITORY}/issues/${PR_NUM}/comments" --paginate --slurp | jq 'add' >"${issue_json}"
+  gh api "repos/${REPOSITORY}/pulls/${PR_NUM}/comments" --paginate --slurp | jq 'add' >"${review_json}"
   new_ids_json="$(jq -Rsc '[split("\n")[] | select(length > 0) | tonumber]' "${new_ids}")"
+  local since_ts authors_json
+  since_ts="$(cat "${state_dir}/opencode-comments-ts" 2>/dev/null || true)"
+  [[ -n "${since_ts}" ]] || since_ts="1970-01-01T00:00:00Z"
+  authors_json="$(_opencode_guard_authors)"
   leaked="$({
-    jq -r --argjson ids "${new_ids_json}" \
-      '.[] | select(.id as $id | ($ids | index($id)) != null) | .body' "${issue_json}"
-    jq -r --argjson ids "${new_ids_json}" \
-      '.[] | select(.id as $id | ($ids | index($id)) != null) | .body' "${review_json}"
+    jq -r --argjson ids "${new_ids_json}" --arg ts "${since_ts}" --argjson authors "${authors_json}" \
+      '.[] | select(.id as $id | ($ids | index($id)) != null)
+         | select((.created_at // "") >= $ts)
+         | select((.user.login // "") as $l | ($authors | index($l)) != null)
+         | .body' "${issue_json}"
+    jq -r --argjson ids "${new_ids_json}" --arg ts "${since_ts}" --argjson authors "${authors_json}" \
+      '.[] | select(.id as $id | ($ids | index($id)) != null)
+         | select((.created_at // "") >= $ts)
+         | select((.user.login // "") as $l | ($authors | index($l)) != null)
+         | .body' "${review_json}"
   } | grep -E '@/|/tmp/' || true)"
   if [[ -n "${leaked}" ]]; then
     echo "::error::A comment posted by this run contains a leaked path token instead of content:"
@@ -72,12 +101,12 @@ opencode_comment_verify() {
 _opencode_guard_main() {
   local command="${1:?usage: comment-guard.sh snapshot|verify}"
   case "${command}" in
-    snapshot) opencode_comment_snapshot ;;
-    verify) opencode_comment_verify ;;
-    *)
-      echo "::error::Unknown comment-guard command '${command}'." >&2
-      return 1
-      ;;
+  snapshot) opencode_comment_snapshot ;;
+  verify) opencode_comment_verify ;;
+  *)
+    echo "::error::Unknown comment-guard command '${command}'." >&2
+    return 1
+    ;;
   esac
 }
 

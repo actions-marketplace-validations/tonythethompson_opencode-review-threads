@@ -30,6 +30,13 @@ if [[ -f "${cache}" ]]; then
   token="$(head -n 1 "${cache}" 2>/dev/null || true)"
 fi
 
+# DENIED means an earlier call already probed every candidate and none
+# verified; the identity probe is a real API write per candidate, so it runs
+# at most once per run rather than on every gh invocation.
+if [[ "${token}" == "DENIED" ]]; then
+  exec "${REAL_GH}" "$@"
+fi
+
 if [[ -z "${token}" ]]; then
   lib="${ACTION_PATH:-}/.opencode/scripts/resolve-app-token.sh"
   [[ -f "${lib}" ]] || lib="${HOME}/.config/opencode/scripts/resolve-app-token.sh"
@@ -44,9 +51,10 @@ if [[ -z "${token}" ]]; then
     fi
     if [[ -n "${repo}" && -n "${pr_num}" ]]; then
       export OC_GH_SHIM_RESOLVING=1
-      candidate=""
+      candidate="" tried=0
       while IFS= read -r candidate; do
         [[ -n "${candidate}" ]] || continue
+        tried=$((tried + 1))
         if opencode_verify_app_token_identity "${repo}" "${pr_num}" "${candidate}"; then
           token="${candidate}"
           umask 077
@@ -55,6 +63,13 @@ if [[ -z "${token}" ]]; then
         fi
       done < <(opencode_resolve_app_token_candidates)
       unset OC_GH_SHIM_RESOLVING
+      # Negative-cache only when candidates existed and all failed; with zero
+      # candidates the check stays cheap (git config reads, no network) and the
+      # App token may still appear later in the run.
+      if [[ -z "${token}" && "${tried}" -gt 0 ]]; then
+        umask 077
+        printf 'DENIED\n' >"${cache}"
+      fi
     fi
   fi
 fi
