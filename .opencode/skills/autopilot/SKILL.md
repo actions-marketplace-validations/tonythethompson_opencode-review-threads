@@ -24,9 +24,12 @@ blockers in strict priority order:
 3. Failing CI.
 
 Do not start CI work while an earlier blocker exists; your pushes restart checks anyway.
-If a pass finds no concrete action and checks are still running, do a bounded wait (for
-example `gh pr checks --watch` for a few minutes), then report the pending state — do
-not burn the whole job timeout and do not invent work because a pass came up empty.
+After pushing, do not wait on checks: take one fresh `gh pr checks` read, report the
+pending state, and end the pass — a failed check or a new trigger starts the next pass.
+Sit on checks only when the request explicitly asks ("watch", "wait for CI",
+"--watch"); then do a bounded wait (for example `gh pr checks --watch` for a few
+minutes), never the whole job timeout. Do not invent work because a pass came up
+empty.
 Read the PR diff only when a comment or CI failure needs code context.
 
 Derive `owner`/`repo` from `baseRepository.nameWithOwner` in the `<pull_request>` context
@@ -116,7 +119,9 @@ fails, suspect the newest change first. Enumerate ALL failing checks, not just o
 
 Verify before finishing: run the narrowest check that proves the fix (the exact failing
 test, lint rule, or build step), then one scoped blast-radius check on what you touched.
-Do not run the full suite when a scoped check suffices.
+Do not run the full suite when a scoped check suffices. The push is the handoff — do
+not watch the restarted run unless explicitly asked; report the fix and the pending
+check and end the pass.
 
 Never change CI checks, workflows, or configs just to make failures pass, and never make
 unrelated code changes; if that would be required, report it instead.
