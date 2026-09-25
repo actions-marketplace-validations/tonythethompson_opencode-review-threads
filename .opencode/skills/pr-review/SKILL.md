@@ -153,7 +153,7 @@ bash "$HOME/.config/opencode/scripts/review-pr-submit.sh" validate-initial
 bash "$HOME/.config/opencode/scripts/review-pr-submit.sh" submit-initial
 ```
 
-Fix payload validation errors only before submission. After validation succeeds, seal the payload and invoke `submit-initial` exactly once. Do not complete a PR-mode findings path until that submission succeeds. Any submission failure terminates the review without retry, fallback posting, or emitting anchorable findings as assistant-only output.
+Fix payload validation errors only before submission. After validation succeeds, seal the payload and invoke `submit-initial`. Before posting, the helper preflights every anchor against the pinned PR base-to-head diff: a comment whose path is absent from that diff, or whose line (or range start) falls outside its hunks on the given side, is rejected before the one-shot submission marker is set. On that failure, fix the anchors (re-anchor onto the PR diff or move the finding to `summary_only`), rerun `validate-initial`, and call `submit-initial` again. Once GitHub itself accepts or rejects the request, submission is one-shot: no retry, fallback posting, or emitting anchorable findings as assistant-only output. Do not complete a PR-mode findings path until a submission succeeds.
 
 After successful submission, write the same header line as `{body}` to `$HOME/.config/opencode/review-state/update.json` and run:
 
@@ -161,7 +161,7 @@ After successful submission, write the same header line as `{body}` to `$HOME/.c
 bash "$HOME/.config/opencode/scripts/review-pr-submit.sh" update
 ```
 
-The trusted helper derives repository, PR, pinned commit, review ID, endpoint, and authentication from trusted state; never pass or override them. If GitHub rejects an inline anchor, fail rather than retrying with a different publication path.
+The trusted helper derives repository, PR, pinned commit, review ID, endpoint, and authentication from trusted state; never pass or override them. If GitHub rejects an inline anchor at the API, fail rather than retrying with a different publication path; rejections the helper raises before posting may be fixed and resubmitted as described above.
 
 Your final assistant output is the canonical review summary; the action posts it as a follow-up comment on the pull request, after the review and its threads. Keep it an index, never a restatement: open with a link to the submitted review (the `submit-initial` response carries its `html_url`) and a one-line overall assessment; then one line per inline finding with file:line, severity, and short title, without repeating finding bodies; then an "Out of diff" section listing any `summary_only` findings and material verification notes with the file(s)/line(s) they cover. Since the review body stays a stub, this comment is the only place the summary appears and must stand alone.
 

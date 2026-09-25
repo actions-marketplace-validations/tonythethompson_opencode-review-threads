@@ -74,7 +74,7 @@ normalize_metadata() {
     --arg base_sha "${base_sha}" \
     --arg head_sha "${head_sha}" \
     --argjson expected_number "${number}" \
-    --slurpfile files <(printf '%s\n' "${files}") '
+    --argjson files "${files}" '
       if (.number | type) != "number" or .number != $expected_number then
         error("pull request metadata did not match the pinned PR")
       elif (.title | type) != "string" then
@@ -91,7 +91,7 @@ normalize_metadata() {
         . + {
           baseRefOid: $base_sha,
           headRefOid: $head_sha,
-          files: $files[0]
+          files: $files
         }
       end
     ' <<< "${metadata}"
