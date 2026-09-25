@@ -113,6 +113,16 @@ Structured writes use this precedence:
 
 The explicit workflow-token fallback may make reviews appear under `github-actions[bot]` or another identity associated with that token. Unverified candidates may be used for read-only metadata access but never pass the structured-write gate.
 
+The same precedence applies to direct `gh` calls the agent makes inside the
+session. `opencode github run` persists the App token in git credential
+configuration, but the gh CLI never reads git config, so improvised `gh api`
+calls would otherwise use the ambient workflow token and author as
+`github-actions[bot]`. The run step prepends a `gh` shim to the session `PATH`
+that resolves the git-config candidates, verifies one as `opencode-agent[bot]`
+once (then caches it for the run), and exports it as `GH_TOKEN`/`GITHUB_TOKEN`
+for that invocation. When no verified token exists, or `use-github-token:
+true`, the shim passes through unchanged.
+
 ### Fail-closed behavior
 
 Review-only mode fails rather than weakening its guarantees when:

@@ -86,6 +86,112 @@ validate_initial_payload() {
     ' "${initial_payload}" > /dev/null \
       || fail "Invalid initial review payload: comment ${index} contains unsupported or missing fields."
   done
+
+  # Normalize degenerate ranges: start_line == line is a single-line comment
+  # that must not carry a range (GitHub rejects it with HTTP 422). Strip
+  # start_line/start_side in place so validation doubles as canonicalization.
+  local normalized_tmp
+  normalized_tmp="$(mktemp "${state_dir}/normalized.XXXXXX.json")"
+  if jq '
+    .comments |= map(
+      if (.start_line != null and .start_line == .line)
+      then del(.start_line, .start_side)
+      else .
+      end
+    )
+  ' "${initial_payload}" > "${normalized_tmp}" && ! cmp -s "${normalized_tmp}" "${initial_payload}"; then
+    mv "${normalized_tmp}" "${initial_payload}"
+    echo "::notice::normalized single-line comments that carried a start_line range"
+  else
+    rm -f "${normalized_tmp}"
+  fi
+}
+
+# Validate every comment anchor against the pinned base..head diff before the
+# submission marker is set. GitHub rejects the whole review when any comment
+# targets a file or line outside the PR diff (HTTP 422), and the one-shot
+# marker makes that rejection unrecoverable. Anchors are computed against the
+# incremental review range, so files that net to unchanged versus the PR base
+# cannot take inline comments at all. Report each invalid comment and fail so
+# the caller can demote or fix the anchors and resubmit.
+opencode_review_preflight_anchors() {
+  local repo="${1}" base_sha="${2}" head_sha="${3}" payload="${4}"
+  local files_json index_file file_count truncated
+  files_json="$(gh api "repos/${repo}/compare/${base_sha}...${head_sha}" \
+    | jq -c '[.files[]? | {filename, previous_filename, status, patch}]')" \
+    || fail "Anchor preflight could not read the pinned diff."
+
+  index_file="$(mktemp "${TMPDIR:-/tmp}/opencode-anchor-index.XXXXXX")"
+  jq -r '.[] | "F\t" + .filename + "\t" + (.previous_filename // "") + "\n" + (.patch // "") + "\n"' \
+    <<< "${files_json}" | awk -F '\t' '
+    BEGIN { file = "" }
+    /^F\t/ { file = $2; prev = $3; next }
+    /^@@ -[0-9]+(,[0-9]+)? \+[0-9]+(,[0-9]+)? @@/ {
+      if (file == "") next
+      h = $0
+      sub(/^@@ -/, "", h); sub(/ @@.*/, "", h)
+      split(h, parts, " \\+")
+      old = parts[1] + 0; sub(/,.*/, "", old)
+      newl = parts[2] + 0; sub(/,.*/, "", newl)
+      next
+    }
+    /^\+/ { if (file != "") { print file "\tRIGHT\t" newl; newl++ } next }
+    /^-/  { if (file != "") { print file "\tLEFT\t"  old;   old++  } next }
+    /^ /  { if (file != "") { print file "\tRIGHT\t" newl; print file "\tLEFT\t" old; newl++; old++ } next }
+  ' > "${index_file}"
+
+  file_count="$(jq 'length' <<< "${files_json}")"
+  truncated="false"
+  # The compare endpoint truncates at 300 files; do not reject anchors whose
+  # file may simply be past the cut.
+  ((file_count >= 300)) && truncated="true"
+
+  local invalid=0 index path side line start_line lookup_path has_patch
+  local comment_count
+  comment_count="$(jq '.comments | length' <<< "${payload}")"
+  for ((index = 0; index < comment_count; index++)); do
+    IFS=$'\t' read -r path side line start_line < <(
+      jq -r --argjson i "${index}" '
+        .comments[$i] | [.path, .side, .line, (.start_line // 0)] | @tsv' <<< "${payload}" \
+        | tr -d '\r'
+    )
+
+    lookup_path="$(jq -r --arg p "${path}" '
+      map(select(.filename == $p or ((.previous_filename // "") == $p and $p != ""))) | .[0].filename // ""
+    ' <<< "${files_json}")"
+
+    if [[ -z "${lookup_path}" ]]; then
+      if [[ "${truncated}" == "true" ]]; then
+        echo "::warning::anchor preflight skipped comment ${index} (${path}:${line}): file may be beyond the compare endpoint's 300-file cap"
+        continue
+      fi
+      echo "::error::comment ${index} anchors '${path}' which is not in the PR's base-to-head diff; demote it to summary_only or re-anchor"
+      ((invalid++)) || true
+      continue
+    fi
+
+    has_patch="$(jq -r --arg f "${lookup_path}" '
+      map(select(.filename == $f)) | .[0] | has("patch") and (.patch != null)
+    ' <<< "${files_json}")"
+    [[ "${has_patch}" == "true" ]] || continue
+
+    if ! awk -F '\t' -v f="${lookup_path}" -v s="${side}" -v l="${line}" \
+      '$1 == f && $2 == s && $3 == l { found = 1 } END { exit !found }' "${index_file}"; then
+      echo "::error::comment ${index} anchors ${lookup_path}:${line} (${side}) outside the diff hunks; demote it to summary_only or re-anchor"
+      ((invalid++)) || true
+      continue
+    fi
+    if ((start_line > 0)); then
+      if ! awk -F '\t' -v f="${lookup_path}" -v s="${side}" -v l="${start_line}" \
+        '$1 == f && $2 == s && $3 == l { found = 1 } END { exit !found }' "${index_file}"; then
+        echo "::error::comment ${index} range starts at ${lookup_path}:${start_line} (${side}) outside the diff hunks; demote it to summary_only or re-anchor"
+        ((invalid++)) || true
+      fi
+    fi
+  done
+
+  rm -f "${index_file}"
+  ((invalid == 0)) || fail "Anchor preflight rejected ${invalid} comment(s); fix or demote them and resubmit."
 }
 
 operation="${1:-}"
@@ -128,6 +234,13 @@ case "${operation}" in
       || fail "Initial review payload changed to invalid JSON after validation."
     [[ "${current_payload}" == "$(cat "${validated_payload}")" ]] \
       || fail "Initial review payload changed after validation; submission must stop."
+    load_token_lib
+    opencode_prepare_gh_token "${USE_GITHUB_TOKEN:-false}" || true
+    context="$(opencode_review_trusted_context)" || fail "Pinned PR context is unavailable or the pinned commit cannot be read."
+    IFS=$'\t' read -r repo pr_number base_sha head_sha _review_base <<< "${context}"
+    # Anchor preflight happens before the one-shot marker so an invalid anchor
+    # is a fixable local error instead of a terminal API rejection.
+    opencode_review_preflight_anchors "${repo}" "${base_sha}" "${head_sha}" "${current_payload}"
     if ! (
       set -o noclobber
       : > "${submission_attempt_file}"
@@ -135,10 +248,6 @@ case "${operation}" in
       fail "Initial review submission was already attempted for this run."
     fi
     rm -f "${validated_payload}"
-    load_token_lib
-    opencode_prepare_gh_token "${USE_GITHUB_TOKEN:-false}" || true
-    context="$(opencode_review_trusted_context)" || fail "Pinned PR context is unavailable or the pinned commit cannot be read."
-    IFS=$'\t' read -r repo pr_number _base_sha head_sha _review_base <<< "${context}"
     request="$(mktemp "${TMPDIR:-/tmp}/opencode-pr-review.XXXXXX.json")"
     trap 'rm -f "${request}"' EXIT
     jq --arg commit_id "${head_sha}" '. + {commit_id: $commit_id, event: "COMMENT"}' <<< "${current_payload}" > "${request}"

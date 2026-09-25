@@ -117,6 +117,91 @@ _local_agent_commit() {
   [ "${status}" -ne 0 ]
 }
 
+_stub_submit_helper() {
+  fake_home="${BATS_TEST_TMPDIR}/home"
+  state_dir="${fake_home}/.config/opencode/review-state"
+  calls_file="${BATS_TEST_TMPDIR}/helper-calls"
+  mkdir -p "${state_dir}" "${fake_home}/.config/opencode/scripts"
+  printf '%s\n' '{"body":"stub","comments":[]}' > "${state_dir}/initial.json"
+  printf '%s\n' '{"body":"stub","comments":[]}' > "${state_dir}/validated-initial.json"
+  cat > "${fake_home}/.config/opencode/scripts/review-pr-submit.sh" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$1" >> "${calls_file}"
+EOF
+  chmod +x "${fake_home}/.config/opencode/scripts/review-pr-submit.sh"
+}
+
+@test "review salvage posts a sealed payload that was never submitted" {
+  _stub_submit_helper
+  run env HOME="${fake_home}" REVIEW_ONLY="true" \
+    bash -euo pipefail -c '
+      source "$1"
+      opencode_retry_salvage_review
+    ' _ "${retry_script}"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${calls_file}")" = "submit-initial" ]
+}
+
+@test "review salvage skips when submission was already attempted" {
+  _stub_submit_helper
+  : > "${state_dir}/submission-attempted"
+  run env HOME="${fake_home}" REVIEW_ONLY="true" \
+    bash -euo pipefail -c '
+      source "$1"
+      opencode_retry_salvage_review
+    ' _ "${retry_script}"
+  [ "${status}" -ne 0 ]
+  [ ! -f "${calls_file}" ]
+}
+
+@test "review salvage is a no-op outside review mode" {
+  _stub_submit_helper
+  run env HOME="${fake_home}" REVIEW_ONLY="false" \
+    bash -euo pipefail -c '
+      source "$1"
+      opencode_retry_salvage_review
+    ' _ "${retry_script}"
+  [ "${status}" -ne 0 ]
+  [ ! -f "${calls_file}" ]
+}
+
+@test "review salvage declines when no sealed payload exists" {
+  _stub_submit_helper
+  : > "${state_dir}/validated-initial.json"
+  run env HOME="${fake_home}" REVIEW_ONLY="true" \
+    bash -euo pipefail -c '
+      source "$1"
+      opencode_retry_salvage_review
+    ' _ "${retry_script}"
+  [ "${status}" -ne 0 ]
+  [ ! -f "${calls_file}" ]
+}
+
+@test "clearing review state removes the session marker and payload dir" {
+  _stub_submit_helper
+  session_marker="${fake_home}/.config/opencode/review-session-1-1"
+  : > "${session_marker}"
+  run env HOME="${fake_home}" REVIEW_ONLY="true" \
+    bash -euo pipefail -c '
+      source "$1"
+      opencode_retry_clear_review_state
+    ' _ "${retry_script}"
+  [ "${status}" -eq 0 ]
+  [ ! -e "${state_dir}" ]
+  [ ! -e "${session_marker}" ]
+}
+
+@test "clearing review state is a no-op outside review mode" {
+  _stub_submit_helper
+  run env HOME="${fake_home}" REVIEW_ONLY="false" \
+    bash -euo pipefail -c '
+      source "$1"
+      opencode_retry_clear_review_state
+    ' _ "${retry_script}"
+  [ "${status}" -eq 0 ]
+  [ -d "${state_dir}" ]
+}
+
 @test "deadline override drives the timeout command for both attempts" {
   run bash -euo pipefail -c '
     source "$1"

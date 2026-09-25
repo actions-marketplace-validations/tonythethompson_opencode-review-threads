@@ -52,6 +52,34 @@ opencode_retry_resync() {
   fi
 }
 
+# If the session died after sealing a review payload but before submitting it,
+# post the sealed findings rather than losing the whole pass. The helper's own
+# checks keep this safe: it refuses unvalidated or mutated payloads, and the
+# submission-attempted marker prevents double posting. No-op outside review
+# mode or when nothing was sealed.
+opencode_retry_salvage_review() {
+  local state_dir helper
+  state_dir="${HOME}/.config/opencode/review-state"
+  [[ "${REVIEW_ONLY:-false}" == "true" ]] || return 1
+  [[ -s "${state_dir}/validated-initial.json" && -s "${state_dir}/initial.json" ]] || return 1
+  [[ ! -e "${state_dir}/submission-attempted" ]] || return 1
+  helper="${HOME}/.config/opencode/scripts/review-pr-submit.sh"
+  [[ -f "${helper}" ]] || helper="${ACTION_PATH:-}/.opencode/scripts/review-pr-submit.sh"
+  [[ -f "${helper}" ]] || return 1
+  echo "::notice::session ended with a sealed but unsubmitted review; posting it"
+  bash "${helper}" submit-initial || return 1
+}
+
+# A retried review session must re-run prepare; the previous attempt's session
+# marker would otherwise fail closed as "already prepared" and its stale state
+# would block a fresh submission. Cleared only after the salvage check, which
+# needs the sealed payload.
+opencode_retry_clear_review_state() {
+  [[ "${REVIEW_ONLY:-false}" == "true" ]] || return 0
+  rm -rf "${HOME}/.config/opencode/review-state"
+  rm -f "${HOME}"/.config/opencode/review-session-*
+}
+
 _opencode_retry_main() {
   local script_dir deadline branch status
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,6 +103,17 @@ _opencode_retry_main() {
   fi
   echo "::warning::opencode github run failed on attempt 1 (exit ${status})"
 
+  # A sealed unsubmitted review payload survives the session; post it now so a
+  # timeout does not zero out the findings. When it posts, skip the retry: the
+  # deliverable already landed, and a fresh session would just see an empty
+  # incremental diff. The original exit status is preserved on purpose — the
+  # session did not complete.
+  if opencode_retry_salvage_review; then
+    echo "::warning::review findings salvaged from the failed session; not retrying"
+    return "${status}"
+  fi
+  opencode_retry_clear_review_state
+
   branch="$(git rev-parse --abbrev-ref HEAD 2> /dev/null || echo '')"
   if opencode_retry_salvage "${branch}"; then
     return 0
@@ -91,6 +130,9 @@ _opencode_retry_main() {
   if ((status == 0)); then
     echo "::notice::opencode github run succeeded on retry"
     return 0
+  fi
+  if opencode_retry_salvage_review; then
+    echo "::warning::review findings salvaged from the failed retry"
   fi
   echo "::error::opencode github run failed on both attempts"
   return "${status}"

@@ -104,8 +104,11 @@ elif [[ "\$*" == "api repos/octo/repo/compare/${base_sha}...${head_sha}" ]]; the
     large)
       jq -cn '{files: [range(0; 300) | {filename: ("file-" + tostring), additions: 1, deletions: 0}]}'
       ;;
+    with-patch)
+      printf '%s\n' '{"files":[{"filename":"x","status":"modified","additions":3,"deletions":0,"patch":"@@ -10,2 +10,4 @@\\n ctx\\n+a\\n+b\\n+c"},{"filename":"removed.txt","status":"removed","deletions":2,"additions":0,"patch":"@@ -5,2 +5,0 @@\\n-old1\\n-old2"},{"filename":"nopatch.bin","status":"added","additions":0,"deletions":0}]}'
+      ;;
     *)
-      printf '%s\n' '{"files":[{"filename":"file.txt","additions":1,"deletions":0}]}'
+      printf '%s\n' '{"files":[{"filename":"file.txt","additions":1,"deletions":0},{"filename":"x","additions":1,"deletions":0}]}'
       ;;
   esac
 elif [[ "\$*" == "api -H Accept: application/vnd.github.diff repos/octo/repo/compare/${base_sha}...${head_sha}" ]]; then
@@ -365,7 +368,7 @@ EOF
   run env HOME="${fake_home}" PATH="${fake_bin}:${PATH}" GITHUB_REPOSITORY="octo/repo" GITHUB_EVENT_PATH="${event_path}" bash "${helper}" metadata
   [ "${status}" -eq 0 ]
   jq -e --arg base_sha "${base_sha}" --arg head_sha "${head_sha}" \
-    '.title == "Review" and .body == "Body" and .baseRefName == "main" and .headRefName == "topic" and .baseRefOid == $base_sha and .headRefOid == $head_sha and .files == [{path:"file.txt", additions:1, deletions:0}]' \
+    '.title == "Review" and .body == "Body" and .baseRefName == "main" and .headRefName == "topic" and .baseRefOid == $base_sha and .headRefOid == $head_sha and .files == [{path:"file.txt", additions:1, deletions:0},{path:"x", additions:1, deletions:0}]' \
     <<< "${output}" > /dev/null
 
   run env HOME="${fake_home}" PATH="${fake_bin}:${PATH}" GITHUB_REPOSITORY="octo/repo" GITHUB_EVENT_PATH="${event_path}" bash "${helper}" diff
@@ -692,4 +695,96 @@ EOF
   [[ "${allowed}" != *'*'* ]]
   run grep -E '(: allow.*(>|>>|[|]|<\())|((>|>>|[|]|<\().*: allow)' "${orchestrator}"
   [ "${status}" -eq 1 ]
+}
+
+_submit_env() {
+  env HOME="${fake_home}" PATH="${fake_bin}:${PATH}" GITHUB_REPOSITORY="octo/repo" GITHUB_EVENT_PATH="${event_path}" "$@"
+}
+
+@test "anchor preflight accepts lines inside the pinned diff hunks" {
+  write_resolver
+  write_issue_comment_event
+  write_snapshot_gh
+  prepare_state
+  COMPARE_CASE=with-patch _submit_env bash "${helper}" context > /dev/null
+  printf '%s\n' '{"body":"Review","comments":[{"path":"x","line":11,"side":"RIGHT","body":"**important · code-reviewer**\n\nfinding"}]}' > "${fake_home}/.config/opencode/review-state/initial.json"
+  _submit_env bash "${submit}" validate-initial
+  run _submit_env COMPARE_CASE=with-patch bash "${submit}" submit-initial
+  [ "${status}" -eq 0 ]
+  [ "$(jq -r '.id' <<< "${output}")" = "555" ]
+}
+
+@test "anchor preflight rejects a line outside the diff hunks without burning the marker" {
+  write_resolver
+  write_issue_comment_event
+  write_snapshot_gh
+  prepare_state
+  COMPARE_CASE=with-patch _submit_env bash "${helper}" context > /dev/null
+  printf '%s\n' '{"body":"Review","comments":[{"path":"x","line":99,"side":"RIGHT","body":"**important · code-reviewer**\n\nfinding"}]}' > "${fake_home}/.config/opencode/review-state/initial.json"
+  _submit_env bash "${submit}" validate-initial
+  run _submit_env COMPARE_CASE=with-patch bash "${submit}" submit-initial
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"outside the diff hunks"* ]]
+  [ ! -e "${fake_home}/.config/opencode/review-state/submission-attempted" ]
+  run grep -Fc 'api --method POST repos/octo/repo/pulls/42/reviews --input' "${gh_calls}"
+  [ "${output}" = "0" ]
+
+  # The same pass can fix the anchor and resubmit.
+  printf '%s\n' '{"body":"Review","comments":[{"path":"x","line":12,"side":"RIGHT","body":"**important · code-reviewer**\n\nfinding"}]}' > "${fake_home}/.config/opencode/review-state/initial.json"
+  _submit_env bash "${submit}" validate-initial
+  run _submit_env COMPARE_CASE=with-patch bash "${submit}" submit-initial
+  [ "${status}" -eq 0 ]
+  [ "$(jq -r '.id' <<< "${output}")" = "555" ]
+}
+
+@test "anchor preflight rejects files absent from the PR diff" {
+  write_resolver
+  write_issue_comment_event
+  write_snapshot_gh
+  prepare_state
+  COMPARE_CASE=with-patch _submit_env bash "${helper}" context > /dev/null
+  printf '%s\n' '{"body":"Review","comments":[{"path":"ghost.cs","line":5,"side":"RIGHT","body":"**important · code-reviewer**\n\nfinding"}]}' > "${fake_home}/.config/opencode/review-state/initial.json"
+  _submit_env bash "${submit}" validate-initial
+  run _submit_env COMPARE_CASE=with-patch bash "${submit}" submit-initial
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"not in the PR's base-to-head diff"* ]]
+  [ ! -e "${fake_home}/.config/opencode/review-state/submission-attempted" ]
+}
+
+@test "anchor preflight enforces side: LEFT line on removed file posts, RIGHT fails" {
+  write_resolver
+  write_issue_comment_event
+  write_snapshot_gh
+  prepare_state
+  COMPARE_CASE=with-patch _submit_env bash "${helper}" context > /dev/null
+  printf '%s\n' '{"body":"Review","comments":[{"path":"removed.txt","line":5,"side":"LEFT","body":"**important · code-reviewer**\n\nfinding"}]}' > "${fake_home}/.config/opencode/review-state/initial.json"
+  _submit_env bash "${submit}" validate-initial
+  run _submit_env COMPARE_CASE=with-patch bash "${submit}" submit-initial
+  [ "${status}" -eq 0 ]
+}
+
+@test "validation strips start_line ranges equal to the comment line" {
+  write_resolver
+  write_issue_comment_event
+  write_snapshot_gh
+  prepare_state
+  printf '%s\n' '{"body":"Review","comments":[{"path":"x","line":11,"side":"RIGHT","start_line":11,"start_side":"RIGHT","body":"**important · code-reviewer**\n\nfinding"}]}' > "${fake_home}/.config/opencode/review-state/initial.json"
+  run env HOME="${fake_home}" bash "${submit}" validate-initial
+  [ "${status}" -eq 0 ]
+  run jq -e '.comments[0] | has("start_line") | not' "${fake_home}/.config/opencode/review-state/initial.json"
+  [ "${status}" -eq 0 ]
+}
+
+@test "anchor preflight rejects a range whose start is outside the diff hunks" {
+  write_resolver
+  write_issue_comment_event
+  write_snapshot_gh
+  prepare_state
+  COMPARE_CASE=with-patch _submit_env bash "${helper}" context > /dev/null
+  printf '%s\n' '{"body":"Review","comments":[{"path":"x","line":12,"side":"RIGHT","start_line":5,"start_side":"RIGHT","body":"**important · code-reviewer**\n\nfinding"}]}' > "${fake_home}/.config/opencode/review-state/initial.json"
+  _submit_env bash "${submit}" validate-initial
+  run _submit_env COMPARE_CASE=with-patch bash "${submit}" submit-initial
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"outside the diff hunks"* ]]
+  [ ! -e "${fake_home}/.config/opencode/review-state/submission-attempted" ]
 }

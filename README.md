@@ -48,7 +48,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run OpenCode
-        uses: tonythethompson/opencode-review-threads@802a4d78c2b8ba92c2375d98d3aa482e8576b925  # v1.3.0
+        uses: tonythethompson/opencode-review-threads@e4ebbcfd7fa7ff642c32367b5817d7ef304cd1d8  # v1.4.2
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -139,3 +139,7 @@ Set `prompt: /review-pr` to run the bundled read-only review through a dedicated
 An unscoped review creates a small set of dynamic, risk-driven discovery tasks instead of routing to fixed specialist agents. Explicit aspects such as `security`, `tests`, `docs`, `performance`, or `simplify` constrain the selected review lenses. Discovery and validation run in separate fresh child sessions; the current OpenCode v1-compatible implementation uses one hidden `review-worker` definition for those sessions.
 
 See [Pull request reviews](docs/pull-request-reviews.md) for setup, supported review aspects, submission behavior, and security guarantees.
+
+## Merge-readiness passes
+
+`/oc fix`, `/oc autopilot`, and `prompt: /autopilot` all load the bundled `autopilot` skill for one disciplined merge-readiness pass: merge conflicts first, then unresolved review threads and other feedback, then failing CI. A scoped `/oc fix <target>` narrows the pass to named feedback. The pass can edit the working tree (auto-committed and pushed by the action) and replies/resolves review threads via `gh`; escalation for security or judgment calls is reported in the summary comment rather than guessed. When `CONTEXT7_API_KEY` is provided, the agent can consult current third-party library docs before fixing API-related failures.

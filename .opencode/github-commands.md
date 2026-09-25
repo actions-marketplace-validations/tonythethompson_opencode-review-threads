@@ -16,10 +16,10 @@ public comment.
   posted. A body that references a file is a bug, not a shortcut.
 - If you draft content in a temp file, **read it back and inline the full contents** before
   posting. When a reply is long, paste it — do not reference it.
-- The `@` form is only ever valid as a literal argument to the `gh` CLI (`-f body=@file`),
-  and only when you invoke `gh` directly in a shell. Even then, `gh api` does not reliably
-  expand it — assume it will post the literal token and always pass real content instead
-  (e.g. `-f body="$(cat file)"`).
+- The `@file` form is only ever valid as a **`-F` raw-field** argument to the `gh` CLI
+  (`-F body=@file` reads the file contents), and only when you invoke `gh` directly in a
+  shell. Lowercase `-f` never expands it: `-f body=@file` posts the literal `@file`
+  string. When in doubt pass real content instead (e.g. `-f body="$(cat file)"`).
 - **Mandatory self-check before finishing:** grep every body you are about to post for
   `@/` and `/tmp/`. If anything matches, fix it. The workflow fails the run when a posted
   comment leaks a path token, so a leak shows up as a red check — but never count on that;
@@ -105,12 +105,13 @@ behavior below applies whether the review is triggered by `/oc review` or by PR 
    creates a resolvable thread. Use the PR head SHA (`Head: { Sha: ... }` in the
    `<pull_request>` context) as `commit_id`, plus the file and line the finding is
    about. Use `gh` CLI with the `@` form ONLY when you are directly invoking `gh` in a
-   shell (the `@` must immediately follow `=`, with no surrounding quotes/spaces, so gh
-   reads the file):
+   shell. The `@` must immediately follow `=` on a **`-F` raw-field** flag, with no
+   surrounding quotes/spaces, for gh to read the file; lowercase `-f` posts the literal
+   `@path` string:
 
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr_number}/comments \
-     -f body=@finding.md \
+     -F body=@finding.md \
      -f path="src/example.ts" \
      -F line=42 \
      -f commit_id="$HEAD_SHA"
@@ -131,7 +132,7 @@ behavior below applies whether the review is triggered by `/oc review` or by PR 
 
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr_number}/comments \
-     -f body=@finding.md \
+     -F body=@finding.md \
      -f path="src/example.ts" \
      -f subject_type=file
    ```
@@ -140,7 +141,7 @@ behavior below applies whether the review is triggered by `/oc review` or by PR 
    the PR diff at all. Post **one issue comment per finding**:
 
    ```bash
-   gh api repos/{owner}/{repo}/issues/{pr_number}/comments -f body=@finding.md
+   gh api repos/{owner}/{repo}/issues/{pr_number}/comments -F body=@finding.md
    ```
 
    Derive `owner`/`repo` from `baseRepository.nameWithOwner` in the `<pull_request>`
@@ -192,9 +193,14 @@ Each finding comment should contain:
 
 1. **Severity** — `high` / `medium` / `low` (or `critical`).
 2. **Location** — `file:line` (or a line range).
-3. **Problem** — why it is wrong, grounded in the actual code.
+3. **Problem** — why it is wrong, grounded in the actual code. Keep it to a few
+   sentences (~80 words target): state the defect and the evidence, do not
+   narrate your verification process.
 4. **Suggested fix** — a GitHub `suggestion` fenced block (see "Committing behavior")
-   when the fix is a contiguous replacement, otherwise a description of the change needed.
+   when the fix is a contiguous replacement of the anchored lines, otherwise a
+   one-sentence description of the change needed. Anchor the comment's line
+   range to cover exactly the lines a `suggestion` block rewrites so the thread
+   is one-click committable.
 
 ### Review scope
 
@@ -203,126 +209,19 @@ performance, maintainability, and test coverage gaps. Ground every finding in th
 and files. Do not invent issues; verify against the code. If there are no actionable findings,
 just say so in the summary comment and do not post finding comments.
 
-## `/oc fix`
+## `/oc fix` and `/oc autopilot`
 
-When a user message is exactly `/oc fix` or begins with `/oc fix`, fix the review feedback on
-the current pull request.
+When a user message begins with `/oc fix` or `/oc autopilot`, **load and follow the
+`autopilot` skill** — it defines one disciplined merge-readiness pass for this pull
+request: merge conflicts first, then unresolved review threads and other feedback, then
+failing CI, in that order.
 
-### Behavior
+- `/oc fix <scope>` narrows the pass to the named feedback (e.g. "fix the comment about
+  X"); a bare `/oc fix` or `/oc fix all` runs the full pass.
+- `/oc autopilot` always means the full unconditional pass, same as `prompt: /autopilot`
+  on `workflow_dispatch`.
 
-0. **If the request mentions CI, tests, checks, build, lint, "failing", "red", or a workflow,
-   check the ACTUAL GitHub Actions run — do not guess from the diff or from a local test run.**
-   The `<pull_request>` context contains review comments only; it does NOT contain CI results, so
-   "no review comments" is NOT "no failures". `gh` is preinstalled and `GITHUB_TOKEN` is set, so
-   query the run directly:
-
-   - Derive `owner`/`repo` from `baseRepository.nameWithOwner` (split on `/`), `HEAD_SHA` from
-     `Head: { Sha: ... }`, and the PR branch from `Head: { ref }` / `headRefName`.
-   - List every check on the head commit and surface the ones that are not green:
-
-     ```bash
-     gh api repos/{owner}/{repo}/commits/{HEAD_SHA}/check-runs \
-       --jq '.check_runs[] | select(.status!="completed" or .conclusion!="success") |
-             "\(.name) status=\(.status) conclusion=\(.conclusion) app=\(.app.slug)"'
-     ```
-
-   - Find the failing workflow run(s) and read the failed-step logs:
-
-     ```bash
-     gh run list --repo {owner}/{repo} --branch {branch} --limit 5
-     gh run view {run_id} --repo {owner}/{repo} --log-failed
-     ```
-
-     If `--log-failed` is empty, use `gh run view {run_id} --repo {owner}/{repo} --log` (or
-     `gh api repos/{owner}/{repo}/actions/runs/{run_id}/jobs` → failed job → its steps) to locate
-     the error.
-
-   - **Do NOT report "there are no failing tests" / "nothing to do" unless the commands above show
-     every check green.** Local `pnpm test` can pass while CI still fails (lint, tsc typecheck,
-     build, integration, component suites all run in CI and may not run locally). Treat the CI log
-     as the source of truth: it gives the exact `file:line` and error message. Reproduce with the
-     project script if helpful (`pnpm lint`, `pnpm test`, etc.), fix the real failure, then re-check
-     with `gh run view --log-failed` that the check is now green.
-   - When the request is purely about CI (not review comments), you may skip the review-thread
-     enumeration in step 1 and go straight to fixing the CI failures — but still enumerate ALL
-     failing checks, not just one.
-
-1. **Collect ALL review feedback** — do not rely on the `<pull_request>` context alone; it may
-   be partial, out of order, or missing threads you'd otherwise need to resolve. You MUST
-   actively enumerate and read every source of feedback on the PR before fixing anything:
-   - **List every thread** via the GraphQL query in step 3 below (with its `isResolved` state) so
-     you know the complete, canonical set of threads before deciding what to act on.
-   - **Skip threads already resolved.** A thread whose `isResolved` is true has already been
-     dealt with — do not re-read or re-judge its contents; doing so just blows up context. Record
-     it in the summary as already handled and move on. (Only revisit a resolved thread if its
-     resolution appears wrong, e.g. resolved without an actual fix.)
-   - **Read every inline review comment** on the open (unresolved) threads (`<pull_request_reviews>`
-     → comments), not just the first one in each thread.
-   - **Read every timeline / issue comment** (`<pull_request_comments>`); a real fix request can
-     live there even though it is not a resolvable thread.
-   - **Read every review body / overall PR review summary** (`<pull_request_reviews>`), including
-     comments on the diff that were never grouped into a thread.
-   - **Read the pull request body itself** for context.
-     Every comment that contains feedback — open inline threads, timeline, review-body — must be
-     judged. Do not skip an open comment only because it is not inline-resolvable; it still counts
-     as addressed. Resolved threads are the one exception and may be skipped to save context.
-2. **For each comment, judge whether it is valid and actionable** against the current code:
-   - **Valid and fixable** → implement the fix by editing files in the working tree. The
-     GitHub Action auto-commits and pushes any uncommitted changes to the PR branch; you do
-     not need to `git commit`/`git push` yourself (though committing yourself is also fine —
-     the action detects it and pushes).
-   - **Not valid, not fixable, or already handled** → do not change code for it, but it still
-     counts as addressed (addressed _as not valid_): reply on the thread with the reason and
-     resolve it (step 3).
-   - **Not an inline-resolvable thread but still contains real feedback to address** (e.g. a
-     timeline comment or a general review-body request) → address it with a commit too when
-     the feedback is valid, and record it in the summary.
-3. **Resolve addressed review threads.** A review thread (inline review comment chain) is
-   resolvable; timeline comments are not. "Addressed" includes threads you **explicitly
-   skip**: a comment judged not valid, already handled, or intentionally not applicable is
-   still addressed (as not valid) and gets resolved too. For every thread you resolve, reply
-   on the thread with the reason first (a fix summary, or the justification for skipping)
-   when possible — the thread then keeps its rationale and the author sees it in place. Use
-   `gh`:
-
-   ```bash
-   # 1. List threads, their resolved state, and the first comment's databaseId
-   gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:10){nodes{databaseId}}}}}}}' -F owner=... -F repo=... -F number=...
-
-   # 2. Reply to the thread with the reason before resolving
-   gh api graphql -f query='mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}' -F id=THREAD_ID -f body=REASON
-   #    REST equivalent (reply to the first comment in the thread):
-   #    gh api repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies -f body=REASON
-
-   # 3. Resolve the thread
-   gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=THREAD_ID
-   ```
-
-   Write the reason to a temp file (`thread.md`) and pass `-f body=@thread.md` when it is
-   long, so multiline Markdown survives intact. **The `@` form is only valid when you invoke
-   the `gh` CLI directly in a shell** (the `@` must immediately follow `=` with no
-   surrounding quotes/spaces). If you post through opencode's built-in review tooling, READ
-   the file and pass its contents as the `body` — never the literal `@path` string, which
-   would leak the path into the reply. Only leave open a thread you genuinely could
-   not address — no fix and no justification — and say why in the summary.
-
-4. **Your final reply text IS the single summary comment** (the action posts it). Do NOT post
-   extra per-finding comments. The summary must cover **everything**:
-   - **Fixed** — for each addressed item: the change made (file:line) and whether its thread
-     was resolved.
-   - **Not fixed (resolved as not valid)** — for each comment you skipped: a brief reason
-     (invalid, already handled, duplicate, out of scope, not fixable) and a note that its
-     thread was replied to and resolved.
-   - **Addressed non-thread feedback** — any feedback that wasn't an inline thread but still
-     warranted a code change: list the change made.
-   - A short overall assessment of remaining risk.
-
-### Fixing behavior notes
-
-- Ground every judgment in the actual diff and files. Verify a comment is still valid against
-  the current code before acting on it.
-- Keep fixes minimal and targeted to the feedback. Do not refactor unrelated code.
-- Resolve every thread you addressed — fixed or explicitly skipped (skipping with a reason
-  is addressing _as not valid_) — and reply on each thread with the reason when possible.
-  Do not resolve a thread you genuinely could not address. Do not modify files for invalid
-  or duplicate feedback.
+The action auto-commits and pushes working-tree changes and posts your final reply as
+the summary comment — the skill's Reporting section defines what that summary must
+cover. Escalation is by summary comment, not by stopping mid-run: surface security,
+auth, billing, migration, and concurrency questions explicitly instead of guessing.
