@@ -23,6 +23,10 @@ blockers in strict priority order:
 2. Active unresolved review threads and comments.
 3. Failing CI.
 
+`OPENCODE_DEADLINE_EPOCH` (unix epoch, when set) is the hard session kill.
+Check it at each phase boundary; inside the last ~10 minutes stop starting new
+work, preserve finished state (push or report), and end the pass cleanly.
+
 Do not start CI work while an earlier blocker exists; your pushes restart checks anyway.
 After pushing, do not wait on checks: take one fresh `gh pr checks` read, report the
 pending state, and end the pass — a failed check or a new trigger starts the next pass.

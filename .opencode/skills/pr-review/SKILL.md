@@ -12,6 +12,10 @@ Review one frozen PR snapshot. OpenCode permissions are the enforcement boundary
 
 The only review subagent is `review-worker`. Every discovery or validation task uses a fresh `review-worker` Task with a bounded packet; never reuse a worker session, emulate independence in the parent, or introduce fixed specialist agents.
 
+## Time budget
+
+When `OPENCODE_DEADLINE_EPOCH` (unix epoch) is set in the environment, the action hard-kills the session at that time and unsubmitted work is lost. Check remaining budget (`date +%s`) before dispatching workers and before each validation round. Reserve the final ~10 minutes for arbitration, payload sealing, and submission; once inside that window, dispatch no new tasks and submit the confirmed set you already have — a partial review posted beats a complete review killed mid-flight. Scale worker count to the budget: when little time remains, prefer fewer, broader discovery tasks over wide fan-out.
+
 ## 1. Freeze the trusted snapshot
 
 Run exactly once:
